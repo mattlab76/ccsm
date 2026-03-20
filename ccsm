@@ -773,11 +773,11 @@ choose_betreff() {
     fi
 
     if [ ${#suggestions[@]} -gt 0 ]; then
-        echo -e "\n${BOLD}$(t save_suggestions)${RESET}"
+        echo -e "\n${BOLD}$(t save_suggestions)${RESET}" >&2
         for i in "${!suggestions[@]}"; do
-            echo -e "  ${GREEN}${keys[$i]})${RESET} ${suggestions[$i]}"
+            echo -e "  ${GREEN}${keys[$i]})${RESET} ${suggestions[$i]}" >&2
         done
-        echo ""
+        echo "" >&2
         local prompt_str
         printf -v prompt_str "$(t save_choose_prompt)" "${keys[$((${#suggestions[@]}-1))]}"
         read -rp "$prompt_str" input
