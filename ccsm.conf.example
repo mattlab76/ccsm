@@ -1,0 +1,10 @@
+# ccsm - Claude Code Session Manager
+# Konfigurationsdatei
+# Speichern unter: ~/.claude/ccsm.conf
+
+# Anzahl Tage nach denen eine Session als "alt" gilt
+# und beim Start zur Prüfung angeboten wird (0 = deaktiviert)
+CLEANUP_DAYS=30
+
+# Maximale Anzahl Sessions im Log (0 = unbegrenzt)
+MAX_SESSIONS=0

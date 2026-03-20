@@ -1,0 +1,16 @@
+#compdef ccsm
+
+_ccsm() {
+    local -a commands
+    commands=(
+        '--search:Sessions durchsuchen'
+        '--stats:Statistiken anzeigen'
+        '--cleanup:Alte Sessions prüfen'
+        '--version:Version anzeigen'
+        '--help:Hilfe anzeigen'
+    )
+
+    _describe 'command' commands
+}
+
+_ccsm "$@"
