@@ -813,10 +813,10 @@ choose_betreff() {
         local prompt_str
         printf -v prompt_str "$(t save_choose_prompt)" "${keys[$((${#suggestions[@]}-1))]}"
         echo -n "$prompt_str" >&2
-        read -r input
+        read -r input < /dev/tty
     else
         echo -n "$(t save_enter_prompt)" >&2
-        read -r input
+        read -r input < /dev/tty
     fi
 
     case "$input" in
@@ -850,7 +850,7 @@ choose_betreff() {
 ###############################################################################
 ask_tags() {
     echo -n "$(t save_tags_prompt)" >&2
-    read -r tags_input
+    read -r tags_input < /dev/tty
     if [ -n "$tags_input" ]; then
         echo "$tags_input" | tr '\t' ' '
     else
@@ -907,7 +907,7 @@ save_session() {
         echo -e "$(t save_current_subject): ${CYAN}${existing_betreff}${RESET}"
         [ -n "$existing_tags" ] && [ "$existing_tags" != "-" ] && echo -e "Tags: ${MAGENTA}${existing_tags}${RESET}"
         echo ""
-        read -rp "$(t save_keep_or_new)" new_input
+        read -rp "$(t save_keep_or_new)" new_input < /dev/tty
 
         # Accumulate tokens: add new to existing
         local new_tokens="$tokens"
