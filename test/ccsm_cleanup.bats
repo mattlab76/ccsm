@@ -8,17 +8,18 @@ setup() {
 }
 
 @test "cleanup: kehrt sofort zurück bei leerem Log" {
-    run check_cleanup
+    run_fn check_cleanup
     assert_success
     assert_output ""
 }
 
 @test "cleanup: kehrt sofort zurück wenn CLEANUP_DAYS=0" {
     create_test_sessions
-    CLEANUP_DAYS=0
-    run check_cleanup
-    assert_success
-    assert_output ""
+    # Config mit CLEANUP_DAYS=0 schreiben
+    echo "CLEANUP_DAYS=0" > "$CONFIG_FILE"
+    run_fn check_cleanup
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
 }
 
 @test "cleanup: erkennt alte Sessions" {
@@ -26,26 +27,30 @@ setup() {
     old_date=$(date -d "60 days ago" '+%Y-%m-%d')
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-old" "/tmp" "Alte Session" "$old_date" "-" > "$SESSION_LOG"
 
-    # Enter = behalten
-    output=$(echo "" | check_cleanup 2>&1)
-    echo "$output" | grep -q "Alte Sessions gefunden"
+    output=$(echo "" | bash -c '
+        export CCSM_TESTING=true CCSM_LANG=en HAS_FZF=false
+        export HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" TMPDIR="'"$TMPDIR"'"
+        source "'"$CCSM_ROOT"'/ccsm"
+        check_cleanup
+    ' 2>&1)
+    echo "$output" | grep -q "Old sessions found"
 }
 
 @test "cleanup: ignoriert junge Sessions" {
     local recent_date
     recent_date=$(date '+%Y-%m-%d')
-    printf '%s\t%s\t%s\t%s\t%s\n' "sid-new" "/tmp" "Neue Session" "$recent_date" "-" > "$SESSION_LOG"
+    printf '%s\t%s\t%s\t%s\t%s\n' "sid-new" "/tmp" "New Session" "$recent_date" "-" > "$SESSION_LOG"
 
-    run check_cleanup
+    run_fn check_cleanup
     assert_success
-    refute_output --partial "Alte Sessions"
+    refute_output --partial "Old sessions"
 }
 
 @test "cleanup: Löschen entfernt Session aus Log" {
     local old_date
     old_date=$(date -d "60 days ago" '+%Y-%m-%d')
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-old" "/tmp" "Alte Session" "$old_date" "-" > "$SESSION_LOG"
-    printf '%s\t%s\t%s\t%s\t%s\n' "sid-new" "/tmp" "Neue Session" "2026-03-20" "-" >> "$SESSION_LOG"
+    printf '%s\t%s\t%s\t%s\t%s\n' "sid-new" "/tmp" "New Session" "2026-03-20" "-" >> "$SESSION_LOG"
 
     # 'd' = löschen
     echo "d" | check_cleanup
@@ -83,5 +88,5 @@ setup() {
     output=$(echo "" | check_cleanup 2>&1)
     echo "$output" | grep -q "Alte"
     # "Neue" sollte nicht in der Cleanup-Ausgabe erscheinen
-    ! echo "$output" | grep -q "Neue Session"
+    ! echo "$output" | grep -q "New Session"
 }

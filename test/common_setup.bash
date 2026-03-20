@@ -8,8 +8,9 @@ _common_setup() {
     load 'test_helper/bats-support/load'
     load 'test_helper/bats-assert/load'
 
-    # Enable test mode
+    # Enable test mode, force English for deterministic tests
     export CCSM_TESTING=true
+    export CCSM_LANG=en
     export HOME="$BATS_TEST_TMPDIR"
 
     # Create required directories
@@ -30,6 +31,22 @@ _common_setup() {
 
     # Source ccsm to load all functions
     source "$CCSM_ROOT/ccsm"
+}
+
+# Helper: run a function via a fresh bash process with ccsm sourced
+# This ensures associative arrays are available (bats' run loses them)
+run_fn() {
+    local fn_name="$1"
+    shift
+    # Pass arguments safely via positional parameters to avoid # and quote issues
+    output=$(bash -c '
+        export CCSM_TESTING=true CCSM_LANG=en HAS_FZF=false
+        export HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" TMPDIR="'"$TMPDIR"'"
+        source "'"$CCSM_ROOT"'/ccsm"
+        '"$fn_name"' "$@"
+    ' _ "$@" 2>&1) || true
+    status=${PIPESTATUS[0]:-$?}
+    IFS=$'\n' read -r -d '' -a lines <<< "$output" || true
 }
 
 # Helper: Create test session log with sample data

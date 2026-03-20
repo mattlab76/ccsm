@@ -86,7 +86,7 @@ setup() {
 
     run generate_suggestions "$transcript" "/home/test/my-project"
     assert_success
-    assert_line --index 1 "Arbeit in: my-project"
+    assert_line --index 1 "Work in: my-project"
 }
 
 @test "generate_suggestions: leeres Transcript ergibt keine User-Nachrichten" {

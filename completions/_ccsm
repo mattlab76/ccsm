@@ -3,11 +3,11 @@
 _ccsm() {
     local -a commands
     commands=(
-        '--search:Sessions durchsuchen'
-        '--stats:Statistiken anzeigen'
-        '--cleanup:Alte Sessions prüfen'
-        '--version:Version anzeigen'
-        '--help:Hilfe anzeigen'
+        '--search:Search sessions'
+        '--stats:Show statistics'
+        '--cleanup:Review old sessions'
+        '--version:Show version'
+        '--help:Show help'
     )
 
     _describe 'command' commands
