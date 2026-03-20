@@ -812,9 +812,11 @@ choose_betreff() {
         echo "" >&2
         local prompt_str
         printf -v prompt_str "$(t save_choose_prompt)" "${keys[$((${#suggestions[@]}-1))]}"
-        read -rp "$prompt_str" input
+        echo -n "$prompt_str" >&2
+        read -r input
     else
-        read -rp "$(t save_enter_prompt)" input
+        echo -n "$(t save_enter_prompt)" >&2
+        read -r input
     fi
 
     case "$input" in
@@ -847,7 +849,8 @@ choose_betreff() {
 # Ask for tags
 ###############################################################################
 ask_tags() {
-    read -rp "$(t save_tags_prompt)" tags_input
+    echo -n "$(t save_tags_prompt)" >&2
+    read -r tags_input
     if [ -n "$tags_input" ]; then
         echo "$tags_input" | tr '\t' ' '
     else
