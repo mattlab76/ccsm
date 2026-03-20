@@ -408,33 +408,29 @@ show_menu() {
         echo -e "${BOLD}$(menu_item "${CYAN}$(t menu_recent)  ${DIM}($(t menu_direct_hint))${RESET}${BOLD}")${RESET}"
         echo -e "${BOLD}${EMPTY_LINE}${RESET}"
 
-        local max_content=$((INNER - 24))
+        local max_betreff=$((INNER - 12))
         local keys=(a b c d e)
         local i=0
-        while IFS=$'\t' read -r sid cwd betreff datum tags; do
+        while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
             local key="${keys[$i]}"
             local short_cwd="${cwd/#$HOME/\~}"
-            local short_betreff="${betreff}"
+            local short_betreff="${betreff:0:$max_betreff}"
+            [ ${#betreff} -gt "$max_betreff" ] && short_betreff="${short_betreff}.."
 
             QUICK_SID[$key]="$sid"
             QUICK_CWD[$key]="$cwd"
             QUICK_BETREFF[$key]="$betreff"
 
-            local total_len=$(( ${#short_betreff} + ${#short_cwd} + 2 ))
-            if [ "$total_len" -gt "$max_content" ]; then
-                short_betreff="${short_betreff:0:28}"
-                [ ${#betreff} -gt 28 ] && short_betreff="${short_betreff}.."
-                local max_cwd=$((max_content - ${#short_betreff} - 2))
-                if [ ${#short_cwd} -gt "$max_cwd" ]; then
-                    short_cwd="..${short_cwd: -$((max_cwd - 2))}"
-                fi
-            fi
+            # Line 1: key + subject
+            local line1="${GREEN}${key})${RESET}${BOLD}  ${short_betreff}"
+            echo -e "${BOLD}$(menu_item "$line1")${RESET}"
 
-            local tag_display=""
-            [ -n "$tags" ] && [ "$tags" != "-" ] && tag_display=" ${MAGENTA}${tags}${RESET}${BOLD}"
+            # Line 2: metadata (date, dir, tags, tokens)
+            local meta="${DIM}${datum}${RESET}  ${CYAN}${short_cwd}${RESET}"
+            [ -n "$tags" ] && [ "$tags" != "-" ] && meta="${meta}  ${MAGENTA}${tags}${RESET}"
+            [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ] && meta="${meta}  ${DIM}${tokens_col} tok${RESET}"
+            echo -e "${BOLD}$(menu_item "    ${meta}")${RESET}"
 
-            local entry="${GREEN}${key})${RESET}${BOLD} ${YELLOW}${datum}${RESET}${BOLD}  ${short_betreff}${tag_display}  ${CYAN}${short_cwd}${RESET}${BOLD}"
-            echo -e "${BOLD}$(menu_item "$entry")${RESET}"
             i=$((i + 1))
         done < <(tac "$SESSION_LOG" | head -5)
 
