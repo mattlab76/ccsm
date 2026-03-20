@@ -151,6 +151,8 @@ L_EN[save_no_data]="No session data received (hook not triggered?)."
 L_EN[save_suggestions]="Subject suggestions:"
 L_EN[save_choose_prompt]="Pick suggestion (a-%s), type your own, or n=don't save: "
 L_EN[save_enter_prompt]="Enter subject or n=don't save: "
+L_EN[save_auto_subject]="Auto-subject"
+L_EN[save_use_auto]="Save with this subject? (y/n):"
 L_EN[save_tags_prompt]="Tags (e.g. #infra #webapp, Enter=none): "
 L_DE[save_title]="Session speichern"
 L_DE[save_dir]="Verzeichnis"
@@ -164,6 +166,8 @@ L_DE[save_no_data]="Keine Session-Daten empfangen (Hook nicht ausgelöst?)."
 L_DE[save_suggestions]="Betreff-Vorschläge:"
 L_DE[save_choose_prompt]="Vorschlag wählen (a-%s), eigenen eingeben, oder n=nicht speichern: "
 L_DE[save_enter_prompt]="Betreff eingeben oder n=nicht speichern: "
+L_DE[save_auto_subject]="Auto-Betreff"
+L_DE[save_use_auto]="Mit diesem Betreff speichern? (j/n):"
 L_DE[save_tags_prompt]="Tags (z.B. #infra #webapp, Enter=keine): "
 
 # Search
@@ -824,7 +828,20 @@ choose_betreff() {
                 echo "__SKIP__"
             fi
             ;;
-        "") echo "__SKIP__" ;;
+        "")
+            # Empty input: ask if they want to save with auto-subject
+            if [ ${#suggestions[@]} -gt 0 ]; then
+                echo -e "${DIM}$(t save_auto_subject): ${suggestions[0]}${RESET}" >&2
+                read -rp "$(t save_use_auto) " confirm
+                if is_yes "$confirm"; then
+                    echo "${suggestions[0]}" | tr '\t' ' '
+                else
+                    echo "__SKIP__"
+                fi
+            else
+                echo "__SKIP__"
+            fi
+            ;;
         *) echo "$input" | tr '\t' ' ' ;;
     esac
 }
