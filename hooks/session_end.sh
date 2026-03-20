@@ -1,13 +1,13 @@
 #!/bin/bash
 # ccsm SessionEnd Hook
-# Speichert Session-Daten in eine Temp-Datei für den ccsm Wrapper
-# Input kommt via stdin als JSON von Claude Code
-# Verwendet Session-ID im Dateinamen um parallele Sessions zu unterstützen
+# Saves session metadata to a temp file for the ccsm wrapper
+# Input comes via stdin as JSON from Claude Code
+# Uses session ID in filename to support parallel sessions
 
 TMPDIR="/tmp/ccsm"
 mkdir -p "$TMPDIR"
 
-# JSON von stdin lesen und relevante Felder extrahieren
+# Read JSON input
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
@@ -17,42 +17,70 @@ TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 
 TMPFILE="${TMPDIR}/session-${SESSION_ID}.json"
 
-# Ersten User-Prompt aus dem Transcript als Auto-Betreff extrahieren
+# Extract first user prompt and token usage from transcript
 BETREFF=""
+TOKENS="0/0"
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-    BETREFF=$(python3 - "$TRANSCRIPT" <<'PYEOF'
+    local_output=$(python3 - "$TRANSCRIPT" <<'PYEOF'
 import json, sys
+
+transcript_path = sys.argv[1]
+betreff = ""
+input_tokens = 0
+output_tokens = 0
+cache_read = 0
+cache_create = 0
+
 try:
-    with open(sys.argv[1]) as f:
+    with open(transcript_path) as f:
         for line in f:
             try:
                 obj = json.loads(line)
-                if obj.get('type') == 'user' and 'message' in obj:
+
+                # Extract first user message as subject
+                if not betreff and obj.get('type') == 'user' and 'message' in obj:
                     msg = obj['message']
                     if isinstance(msg, dict) and msg.get('role') == 'user':
                         for c in msg.get('content', []):
                             if isinstance(c, dict) and c.get('type') == 'text':
-                                text = c['text'].strip().replace('\n', ' ').replace('\t', ' ')[:120]
-                                print(text)
-                                sys.exit(0)
-            except json.JSONDecodeError:
+                                betreff = c['text'].strip().replace('\n', ' ').replace('\t', ' ')[:120]
+                                break
+
+                # Sum token usage from assistant messages
+                msg = obj.get('message', {})
+                if isinstance(msg, dict) and 'usage' in msg:
+                    u = msg['usage']
+                    input_tokens += u.get('input_tokens', 0)
+                    output_tokens += u.get('output_tokens', 0)
+                    cache_read += u.get('cache_read_input_tokens', 0)
+                    cache_create += u.get('cache_creation_input_tokens', 0)
+
+            except (json.JSONDecodeError, KeyError):
                 pass
 except Exception:
     pass
+
+total_in = input_tokens + cache_read + cache_create
+print(f"{betreff}\t{total_in}/{output_tokens}")
 PYEOF
     )
+    # Parse tab-separated output: betreff<TAB>tokens
+    BETREFF=$(echo "$local_output" | cut -f1)
+    TOKENS=$(echo "$local_output" | cut -f2)
 fi
 
-# Tabs im Betreff durch Leerzeichen ersetzen (TSV-Sicherheit)
+# Sanitize for TSV
 BETREFF=$(echo "$BETREFF" | tr '\t' ' ')
+[ -z "$TOKENS" ] && TOKENS="0/0"
 
-# In Temp-Datei schreiben (mit Session-ID im Namen)
+# Write temp file
 jq -n \
     --arg sid "$SESSION_ID" \
     --arg cwd "$CWD" \
     --arg betreff "$BETREFF" \
     --arg transcript "$TRANSCRIPT" \
-    '{"session_id": $sid, "cwd": $cwd, "betreff": $betreff, "transcript": $transcript}' > "$TMPFILE"
+    --arg tokens "$TOKENS" \
+    '{"session_id": $sid, "cwd": $cwd, "betreff": $betreff, "transcript": $transcript, "tokens": $tokens}' > "$TMPFILE"
 
-# Alte Temp-Dateien aufräumen (älter als 1 Tag)
+# Cleanup old temp files (older than 1 day)
 find "$TMPDIR" -name "session-*.json" -mtime +1 -delete 2>/dev/null

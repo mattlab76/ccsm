@@ -20,7 +20,7 @@
 #   ccsm --cleanup        Manual cleanup
 #   ccsm --help           Show help
 
-CCSM_VERSION="1.1.0"
+CCSM_VERSION="1.2.0"
 
 # Paths
 SESSION_LOG="$HOME/.claude/session_log.tsv"
@@ -188,7 +188,11 @@ L_EN[stats_fzf_available]="available"
 L_EN[stats_fzf_missing]="not installed"
 L_EN[stats_top_dirs]="Top directories"
 L_EN[stats_top_tags]="Top tags"
+L_EN[stats_tokens]="Total tokens"
+L_EN[stats_tokens_in]="Input"
+L_EN[stats_tokens_out]="Output"
 L_EN[stats_none]="No sessions available."
+L_EN[tokens_label]="Tokens"
 L_DE[stats_title]="ccsm Statistiken"
 L_DE[stats_version]="Version"
 L_DE[stats_total]="Gesamt"
@@ -200,7 +204,11 @@ L_DE[stats_fzf_available]="verfügbar"
 L_DE[stats_fzf_missing]="nicht installiert"
 L_DE[stats_top_dirs]="Top Verzeichnisse"
 L_DE[stats_top_tags]="Top Tags"
+L_DE[stats_tokens]="Tokens gesamt"
+L_DE[stats_tokens_in]="Input"
+L_DE[stats_tokens_out]="Output"
 L_DE[stats_none]="Keine Sessions vorhanden."
+L_DE[tokens_label]="Tokens"
 
 # Confirm characters
 L_EN[confirm_yes]="y"
@@ -495,21 +503,22 @@ show_sessions() {
 
     echo ""
     echo -e "${BOLD}$(t sessions_title)${RESET}"
-    echo -e "${BOLD}───────────────────────────────────────────────────────────────────────────────────${RESET}"
-    printf "${BOLD}%-4s %-12s %-35s %-12s %s${RESET}\n" "#" "$(t sessions_col_date)" "$(t sessions_col_subject)" "$(t sessions_col_tags)" "$(t sessions_col_dir)"
-    echo -e "${BOLD}───────────────────────────────────────────────────────────────────────────────────${RESET}"
+    echo -e "${BOLD}──────────────────────────────────────────────────────────────────────────────────────────────${RESET}"
+    printf "${BOLD}%-4s %-12s %-30s %-12s %-18s %s${RESET}\n" "#" "$(t sessions_col_date)" "$(t sessions_col_subject)" "$(t sessions_col_tags)" "$(t tokens_label)" "$(t sessions_col_dir)"
+    echo -e "${BOLD}──────────────────────────────────────────────────────────────────────────────────────────────${RESET}"
 
     local i=1
-    while IFS=$'\t' read -r sid cwd betreff datum tags; do
+    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
         local short_cwd="${cwd/#$HOME/~}"
-        local short_betreff="${betreff:0:33}"
-        [ ${#betreff} -gt 33 ] && short_betreff="${short_betreff}.."
+        local short_betreff="${betreff:0:28}"
+        [ ${#betreff} -gt 28 ] && short_betreff="${short_betreff}.."
         local tag_str="${tags:--}"
-        printf "%-4s %-12s %-35s %-12s %s\n" "$i)" "$datum" "$short_betreff" "$tag_str" "$short_cwd"
+        local tok_str="${tokens_col:-0/0}"
+        printf "%-4s %-12s %-30s %-12s %-18s %s\n" "$i)" "$datum" "$short_betreff" "$tag_str" "$tok_str" "$short_cwd"
         i=$((i + 1))
     done < <(tac "$SESSION_LOG")
 
-    echo -e "${BOLD}───────────────────────────────────────────────────────────────────────────────────${RESET}"
+    echo -e "${BOLD}──────────────────────────────────────────────────────────────────────────────────────────────${RESET}"
     echo ""
     return 0
 }
@@ -680,6 +689,25 @@ show_stats() {
         echo -e "    ${GREEN}${count}x${RESET}  ${short_dir}"
     done
 
+    # Token totals
+    local total_in=0 total_out=0
+    while IFS=$'\t' read -r _ _ _ _ _ tk; do
+        if [ -n "$tk" ] && [ "$tk" != "0/0" ]; then
+            local t_in t_out
+            t_in=$(echo "$tk" | cut -d/ -f1)
+            t_out=$(echo "$tk" | cut -d/ -f2)
+            total_in=$((total_in + t_in))
+            total_out=$((total_out + t_out))
+        fi
+    done < "$SESSION_LOG"
+
+    if [ $((total_in + total_out)) -gt 0 ]; then
+        echo ""
+        echo -e "  ${BOLD}$(t stats_tokens):${RESET}"
+        printf "    $(t stats_tokens_in):  %'d\n" "$total_in"
+        printf "    $(t stats_tokens_out): %'d\n" "$total_out"
+    fi
+
     local tags_col
     tags_col=$(cut -f5 "$SESSION_LOG" 2>/dev/null | grep -v '^$' | grep -v '^-$' | tr ' ' '\n' | sort | uniq -c | sort -rn | head -5)
     if [ -n "$tags_col" ]; then
@@ -836,11 +864,12 @@ save_session() {
         return
     fi
 
-    local sid cwd betreff transcript
+    local sid cwd betreff transcript tokens
     sid=$(jq -r '.session_id' "$tmpfile" 2>/dev/null)
     cwd=$(jq -r '.cwd' "$tmpfile" 2>/dev/null)
     betreff=$(jq -r '.betreff' "$tmpfile" 2>/dev/null)
     transcript=$(jq -r '.transcript // empty' "$tmpfile" 2>/dev/null)
+    tokens=$(jq -r '.tokens // "0/0"' "$tmpfile" 2>/dev/null)
     [ -z "$sid" ] && return
 
     local datum
@@ -851,23 +880,36 @@ save_session() {
     echo ""
     echo -e "${BOLD}═══ $(t save_title) ═══${RESET}"
     echo -e "$(t save_dir): ${CYAN}${cwd}${RESET}"
+    [ -n "$tokens" ] && [ "$tokens" != "0/0" ] && echo -e "$(t tokens_label): ${DIM}${tokens} (in/out)${RESET}"
 
     if [ -n "$existing_line" ]; then
-        local existing_betreff existing_tags
+        local existing_betreff existing_tags existing_tokens
         existing_betreff=$(echo "$existing_line" | cut -f3)
         existing_tags=$(echo "$existing_line" | cut -f5)
+        existing_tokens=$(echo "$existing_line" | cut -f6)
         echo -e "$(t save_current_subject): ${CYAN}${existing_betreff}${RESET}"
         [ -n "$existing_tags" ] && [ "$existing_tags" != "-" ] && echo -e "Tags: ${MAGENTA}${existing_tags}${RESET}"
         echo ""
         read -rp "$(t save_keep_or_new)" new_input
 
+        # Accumulate tokens: add new to existing
+        local new_tokens="$tokens"
+        if [ -n "$existing_tokens" ] && [ "$existing_tokens" != "0/0" ] && [ -n "$tokens" ] && [ "$tokens" != "0/0" ]; then
+            local old_in old_out cur_in cur_out
+            old_in=$(echo "$existing_tokens" | cut -d/ -f1)
+            old_out=$(echo "$existing_tokens" | cut -d/ -f2)
+            cur_in=$(echo "$tokens" | cut -d/ -f1)
+            cur_out=$(echo "$tokens" | cut -d/ -f2)
+            new_tokens="$(( old_in + cur_in ))/$(( old_out + cur_out ))"
+        fi
+
         if [ -z "$new_input" ]; then
             local tmplog="${SESSION_LOG}.tmp"
-            while IFS=$'\t' read -r s c b d t_col; do
+            while IFS=$'\t' read -r s c b d t_col tk; do
                 if [ "$s" = "$sid" ]; then
-                    printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$datum" "$t_col"
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$datum" "$t_col" "$new_tokens"
                 else
-                    printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col"
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
                 fi
             done < "$SESSION_LOG" > "$tmplog"
             mv "$tmplog" "$SESSION_LOG"
@@ -876,11 +918,11 @@ save_session() {
             local new_betreff
             new_betreff=$(echo "$new_input" | tr '\t' ' ')
             local tmplog="${SESSION_LOG}.tmp"
-            while IFS=$'\t' read -r s c b d t_col; do
+            while IFS=$'\t' read -r s c b d t_col tk; do
                 if [ "$s" = "$sid" ]; then
-                    printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$new_betreff" "$datum" "$t_col"
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$new_betreff" "$datum" "$t_col" "$new_tokens"
                 else
-                    printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col"
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
                 fi
             done < "$SESSION_LOG" > "$tmplog"
             mv "$tmplog" "$SESSION_LOG"
@@ -894,7 +936,7 @@ save_session() {
         else
             local tags
             tags=$(ask_tags)
-            printf '%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$tags" >> "$SESSION_LOG"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$tags" "$tokens" >> "$SESSION_LOG"
             echo -e "${GREEN}$(t save_saved): ${chosen_betreff}${RESET}"
         fi
     fi
