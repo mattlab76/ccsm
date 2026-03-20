@@ -829,17 +829,14 @@ choose_betreff() {
             fi
             ;;
         "")
-            # Empty input: ask if they want to save with auto-subject
+            # Empty input: save with first suggestion or default subject
             if [ ${#suggestions[@]} -gt 0 ]; then
-                echo -e "${DIM}$(t save_auto_subject): ${suggestions[0]}${RESET}" >&2
-                read -rp "$(t save_use_auto) " confirm
-                if is_yes "$confirm"; then
-                    echo "${suggestions[0]}" | tr '\t' ' '
-                else
-                    echo "__SKIP__"
-                fi
+                echo "${suggestions[0]}" | tr '\t' ' '
             else
-                echo "__SKIP__"
+                # Default subject: date + directory name
+                local dir_name
+                dir_name=$(basename "$cwd")
+                echo "Session $dir_name $(date '+%Y-%m-%d')"
             fi
             ;;
         *) echo "$input" | tr '\t' ' ' ;;

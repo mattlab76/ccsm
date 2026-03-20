@@ -82,8 +82,10 @@ setup() {
     assert_equal "$result" "__SKIP__"
 }
 
-@test "edge: choose_betreff mit leerem Input gibt __SKIP__ zurück" {
+@test "edge: choose_betreff mit leerem Input gibt Default-Betreff zurück" {
     local result
-    result=$(echo "" | choose_betreff "" "/tmp")
-    assert_equal "$result" "__SKIP__"
+    result=$(echo "" | choose_betreff "" "/tmp/my-project")
+    # Should return a default subject (not __SKIP__)
+    [[ "$result" != "__SKIP__" ]]
+    [[ "$result" == *"my-project"* ]]
 }
