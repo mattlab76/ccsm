@@ -352,7 +352,7 @@ check_cleanup() {
 
         echo -e "  ${DIM}${datum} (${age} $(t cleanup_days | sed "s/%d/$age/"))${RESET}  ${BOLD}${betreff}${RESET}"
         echo -e "  ${CYAN}${short_cwd}${RESET}"
-        read -rp "  $(t cleanup_prompt)" action
+        echo -n "  $(t cleanup_prompt)"; read -r action
 
         if [ "$action" = "d" ] || [ "$action" = "D" ]; then
             to_delete+=("$sid")
@@ -451,7 +451,7 @@ show_menu() {
     echo -e "${BOLD}${EMPTY_LINE}${RESET}"
     echo -e "${BOLD}╰${HLINE}╯${RESET}"
     echo ""
-    read -rp "$(t prompt_choice)" MENU_CHOICE
+    echo -n "$(t prompt_choice)"; read -r MENU_CHOICE
 }
 
 ###############################################################################
@@ -531,7 +531,7 @@ select_session_classic() {
     show_sessions || return 1
     local total
     total=$(wc -l < "$SESSION_LOG")
-    read -rp "$(t sessions_prompt_nr)" sel
+    echo -n "$(t sessions_prompt_nr)"; read -r sel
     [ "$sel" = "q" ] && return 1
     if ! [[ "$sel" =~ ^[0-9]+$ ]] || [ "$sel" -lt 1 ] || [ "$sel" -gt "$total" ]; then
         echo -e "${YELLOW}$(t err_invalid)${RESET}"
@@ -571,7 +571,7 @@ delete_session() {
         local betreff
         betreff=$(grep "^${sid}	" "$SESSION_LOG" | cut -f3)
         echo -e "Session: ${CYAN}${betreff}${RESET}"
-        read -rp "$(t delete_confirm)" confirm
+        echo -n "$(t delete_confirm)"; read -r confirm
 
         if is_yes "$confirm"; then
             local tmplog="${SESSION_LOG}.tmp"
@@ -585,7 +585,7 @@ delete_session() {
         show_sessions || return
         local total
         total=$(wc -l < "$SESSION_LOG")
-        read -rp "$(t delete_prompt_nr)" sel
+        echo -n "$(t delete_prompt_nr)"; read -r sel
         [ "$sel" = "q" ] && return
         if ! [[ "$sel" =~ ^[0-9]+$ ]] || [ "$sel" -lt 1 ] || [ "$sel" -gt "$total" ]; then
             echo -e "${YELLOW}$(t err_invalid)${RESET}"
@@ -597,7 +597,7 @@ delete_session() {
         local del_betreff
         del_betreff=$(echo "$line" | cut -f3)
         echo -e "Session: ${CYAN}${del_betreff}${RESET}"
-        read -rp "$(t delete_confirm)" confirm
+        echo -n "$(t delete_confirm)"; read -r confirm
         if is_yes "$confirm"; then
             sed -i "${reversed_line}d" "$SESSION_LOG"
             echo -e "${GREEN}$(t delete_done)${RESET}"
@@ -814,9 +814,9 @@ choose_betreff() {
         echo ""
         local prompt_str
         printf -v prompt_str "$(t save_choose_prompt)" "${keys[$((${#suggestions[@]}-1))]}"
-        read -rp "$prompt_str" input
+        echo -n "$prompt_str"; read -r input
     else
-        read -rp "$(t save_enter_prompt)" input
+        echo -n "$(t save_enter_prompt)"; read -r input
     fi
 
     case "$input" in
@@ -847,7 +847,7 @@ choose_betreff() {
 # Ask for tags
 ###############################################################################
 ask_tags() {
-    read -rp "$(t save_tags_prompt)" tags_input
+    echo -n "$(t save_tags_prompt)"; read -r tags_input
     if [ -n "$tags_input" ]; then
         CHOSEN_TAGS=$(echo "$tags_input" | tr '\t' ' ')
     else
@@ -904,7 +904,7 @@ save_session() {
         echo -e "$(t save_current_subject): ${CYAN}${existing_betreff}${RESET}"
         [ -n "$existing_tags" ] && [ "$existing_tags" != "-" ] && echo -e "Tags: ${MAGENTA}${existing_tags}${RESET}"
         echo ""
-        read -rp "$(t save_keep_or_new)" new_input < /dev/tty
+        echo -n "$(t save_keep_or_new)"; read -r new_input
 
         # Accumulate tokens: add new to existing
         local new_tokens="$tokens"
