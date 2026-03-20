@@ -190,9 +190,9 @@ show_menu() {
     echo -e "${BOLD}${EMPTY_LINE}${RESET}"
 
     # ASCII-Art Logo
-    echo -e "${BOLD}$(center_ansi "${CYAN}┌─┐┌─┐┌─┐┌┬┐${RESET}")${RESET}"
-    echo -e "${BOLD}$(center_ansi "${CYAN}│  │  └─┐│││${RESET}")${RESET}"
-    echo -e "${BOLD}$(center_ansi "${CYAN}└─┘└─┘└─┘┴ ┴${RESET}")${RESET}"
+    echo -e "${BOLD}$(center_ansi "${CYAN}╔═╗ ╔═╗ ╔═╗ ╔╦╗${RESET}")${RESET}"
+    echo -e "${BOLD}$(center_ansi "${CYAN}║   ║   ╚═╗ ║║║${RESET}")${RESET}"
+    echo -e "${BOLD}$(center_ansi "${CYAN}╚═╝ ╚═╝ ╚═╝ ╩ ╩${RESET}")${RESET}"
 
     echo -e "${BOLD}${EMPTY_LINE}${RESET}"
     echo -e "${BOLD}$(center_ansi "${DIM}Claude Code Session Manager v${CCSM_VERSION}${RESET}")${RESET}"

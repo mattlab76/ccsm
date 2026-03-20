@@ -11,9 +11,9 @@ A terminal-based session manager for [Claude Code](https://docs.anthropic.com/en
 ```
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                              ┌─┐┌─┐┌─┐┌┬┐                                  │
-│                              │  │  └─┐│││                                   │
-│                              └─┘└─┘└─┘┴ ┴                                   │
+│                             ╔═╗ ╔═╗ ╔═╗ ╔╦╗                                 │
+│                             ║   ║   ╚═╗ ║║║                                 │
+│                             ╚═╝ ╚═╝ ╚═╝ ╩ ╩                                 │
 │                                                                              │
 │                    Claude Code Session Manager v1.0.0                        │
 │                                                                              │
