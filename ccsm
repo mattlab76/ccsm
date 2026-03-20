@@ -797,6 +797,7 @@ choose_betreff() {
     local transcript="$1" cwd="$2"
     local suggestions=()
     local keys=(a b c d e)
+    CHOSEN_BETREFF="__SKIP__"
 
     if [ -n "$transcript" ] && [ -f "$transcript" ]; then
         while IFS= read -r line; do
@@ -804,44 +805,41 @@ choose_betreff() {
         done < <(generate_suggestions "$transcript" "$cwd")
     fi
 
+    local input=""
     if [ ${#suggestions[@]} -gt 0 ]; then
-        echo -e "\n${BOLD}$(t save_suggestions)${RESET}" >&2
+        echo -e "\n${BOLD}$(t save_suggestions)${RESET}"
         for i in "${!suggestions[@]}"; do
-            echo -e "  ${GREEN}${keys[$i]})${RESET} ${suggestions[$i]}" >&2
+            echo -e "  ${GREEN}${keys[$i]})${RESET} ${suggestions[$i]}"
         done
-        echo "" >&2
+        echo ""
         local prompt_str
         printf -v prompt_str "$(t save_choose_prompt)" "${keys[$((${#suggestions[@]}-1))]}"
-        echo -n "$prompt_str" >&2
-        read -r input < /dev/tty
+        read -rp "$prompt_str" input
     else
-        echo -n "$(t save_enter_prompt)" >&2
-        read -r input < /dev/tty
+        read -rp "$(t save_enter_prompt)" input
     fi
 
     case "$input" in
-        n|N) echo "__SKIP__"; return ;;
+        n|N) CHOSEN_BETREFF="__SKIP__" ;;
         a|b|c|d|e)
             local idx=$(( $(printf '%d' "'$input") - $(printf '%d' "'a") ))
             if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#suggestions[@]}" ]; then
-                echo "${suggestions[$idx]}" | tr '\t' ' '
+                CHOSEN_BETREFF=$(echo "${suggestions[$idx]}" | tr '\t' ' ')
             else
-                echo -e "${YELLOW}$(t err_invalid)${RESET}" >&2
-                echo "__SKIP__"
+                echo -e "${YELLOW}$(t err_invalid)${RESET}"
+                CHOSEN_BETREFF="__SKIP__"
             fi
             ;;
         "")
-            # Empty input: save with first suggestion or default subject
             if [ ${#suggestions[@]} -gt 0 ]; then
-                echo "${suggestions[0]}" | tr '\t' ' '
+                CHOSEN_BETREFF=$(echo "${suggestions[0]}" | tr '\t' ' ')
             else
-                # Default subject: date + directory name
                 local dir_name
                 dir_name=$(basename "$cwd")
-                echo "Session $dir_name $(date '+%Y-%m-%d')"
+                CHOSEN_BETREFF="Session $dir_name $(date '+%Y-%m-%d')"
             fi
             ;;
-        *) echo "$input" | tr '\t' ' ' ;;
+        *) CHOSEN_BETREFF=$(echo "$input" | tr '\t' ' ') ;;
     esac
 }
 
@@ -849,12 +847,11 @@ choose_betreff() {
 # Ask for tags
 ###############################################################################
 ask_tags() {
-    echo -n "$(t save_tags_prompt)" >&2
-    read -r tags_input < /dev/tty
+    read -rp "$(t save_tags_prompt)" tags_input
     if [ -n "$tags_input" ]; then
-        echo "$tags_input" | tr '\t' ' '
+        CHOSEN_TAGS=$(echo "$tags_input" | tr '\t' ' ')
     else
-        echo "-"
+        CHOSEN_TAGS="-"
     fi
 }
 
@@ -946,15 +943,13 @@ save_session() {
             echo -e "${GREEN}$(t save_subject_updated): ${new_betreff}${RESET}"
         fi
     else
-        local chosen_betreff
-        chosen_betreff=$(choose_betreff "$transcript" "$cwd")
-        if [ "$chosen_betreff" = "__SKIP__" ]; then
+        choose_betreff "$transcript" "$cwd"
+        if [ "$CHOSEN_BETREFF" = "__SKIP__" ]; then
             echo "$(t save_not_saved)"
         else
-            local tags
-            tags=$(ask_tags)
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$tags" "$tokens" >> "$SESSION_LOG"
-            echo -e "${GREEN}$(t save_saved): ${chosen_betreff}${RESET}"
+            ask_tags
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$CHOSEN_BETREFF" "$datum" "$CHOSEN_TAGS" "$tokens" >> "$SESSION_LOG"
+            echo -e "${GREEN}$(t save_saved): ${CHOSEN_BETREFF}${RESET}"
         fi
     fi
 
