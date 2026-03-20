@@ -1,0 +1,44 @@
+post_install() {
+    echo ""
+    echo "╔═╗ ╔═╗ ╔═╗ ╔╦╗"
+    echo "║   ║   ╚═╗ ║║║"
+    echo "╚═╝ ╚═╝ ╚═╝ ╩ ╩"
+    echo ""
+    echo "ccsm installed successfully!"
+    echo ""
+    echo "To complete setup, run the following once:"
+    echo ""
+    echo "  # Copy hook to Claude Code hooks directory"
+    echo "  mkdir -p ~/.claude/hooks"
+    echo "  cp /usr/share/ccsm/hooks/session_end.sh ~/.claude/hooks/ccsm_session_end.sh"
+    echo ""
+    echo "  # Copy example config (optional)"
+    echo "  cp /usr/share/ccsm/ccsm.conf.example ~/.claude/ccsm.conf"
+    echo ""
+    echo "  # Add hook to Claude Code settings"
+    echo "  # If ~/.claude/settings.json exists, add the SessionEnd hook manually"
+    echo "  # or run: ccsm --setup (coming soon)"
+    echo ""
+    echo "  # Quick setup (creates settings.json if not present):"
+    echo '  mkdir -p ~/.claude/hooks && cp /usr/share/ccsm/hooks/session_end.sh ~/.claude/hooks/ccsm_session_end.sh && [ ! -f ~/.claude/ccsm.conf ] && cp /usr/share/ccsm/ccsm.conf.example ~/.claude/ccsm.conf; [ ! -f ~/.claude/settings.json ] && echo '"'"'{"hooks":{"SessionEnd":[{"matcher":"","hooks":[{"type":"command","command":"bash ~/.claude/hooks/ccsm_session_end.sh","timeout":5}]}]}}'"'"' > ~/.claude/settings.json || echo "settings.json exists - add hook manually if needed"'
+    echo ""
+    echo "Then start with: ccsm"
+    echo ""
+}
+
+post_upgrade() {
+    echo ""
+    echo "ccsm upgraded. Update your hook:"
+    echo "  cp /usr/share/ccsm/hooks/session_end.sh ~/.claude/hooks/ccsm_session_end.sh"
+    echo ""
+}
+
+post_remove() {
+    echo ""
+    echo "ccsm removed. You may want to clean up:"
+    echo "  rm -f ~/.claude/hooks/ccsm_session_end.sh"
+    echo "  rm -f ~/.claude/ccsm.conf"
+    echo "  # Session data: ~/.claude/session_log.tsv"
+    echo "  # Remove hook from ~/.claude/settings.json"
+    echo ""
+}

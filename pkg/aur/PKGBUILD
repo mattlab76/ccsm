@@ -1,0 +1,47 @@
+# Maintainer: Matthias Haas <matthias.haas@mattlab.at>
+pkgname=ccsm-git
+pkgver=1.1.0.r0.ga3516dd
+pkgrel=1
+pkgdesc="Claude Code Session Manager - save, tag, search and resume Claude Code sessions"
+arch=('any')
+url="https://github.com/mattlab76/ccsm"
+license=('MIT')
+depends=('bash' 'jq' 'python')
+optdepends=(
+    'fzf: fuzzy search support'
+    'zsh: tab completion'
+)
+makedepends=('git')
+provides=('ccsm')
+conflicts=('ccsm')
+source=("git+https://github.com/mattlab76/ccsm.git")
+sha256sums=('SKIP')
+install=ccsm.install
+
+pkgver() {
+    cd "$srcdir/ccsm"
+    git describe --long --abbrev=7 --tags 2>/dev/null | sed 's/^v//;s/-/.r/;s/-/./'
+}
+
+package() {
+    cd "$srcdir/ccsm"
+
+    # Main executable
+    install -Dm755 ccsm "$pkgdir/usr/bin/ccsm"
+
+    # Hook script
+    install -Dm755 hooks/session_end.sh "$pkgdir/usr/share/ccsm/hooks/session_end.sh"
+
+    # Example config
+    install -Dm644 ccsm.conf.example "$pkgdir/usr/share/ccsm/ccsm.conf.example"
+
+    # Zsh completion
+    install -Dm644 completions/_ccsm "$pkgdir/usr/share/zsh/site-functions/_ccsm"
+
+    # Documentation
+    install -Dm644 README.md "$pkgdir/usr/share/doc/ccsm/README.md"
+    install -Dm644 CHANGELOG.md "$pkgdir/usr/share/doc/ccsm/CHANGELOG.md"
+
+    # License
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/ccsm/LICENSE"
+}

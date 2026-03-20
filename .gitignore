@@ -1,0 +1,4 @@
+pkg/aur/ccsm/
+pkg/aur/src/
+pkg/aur/*.pkg.tar.*
+pkg/aur/pkg/

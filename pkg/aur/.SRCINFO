@@ -1,0 +1,20 @@
+pkgbase = ccsm-git
+	pkgdesc = Claude Code Session Manager - save, tag, search and resume Claude Code sessions
+	pkgver = 1.1.0.r0.a3516dd
+	pkgrel = 1
+	url = https://github.com/mattlab76/ccsm
+	install = ccsm.install
+	arch = any
+	license = MIT
+	makedepends = git
+	depends = bash
+	depends = jq
+	depends = python
+	optdepends = fzf: fuzzy search support
+	optdepends = zsh: tab completion
+	provides = ccsm
+	conflicts = ccsm
+	source = git+https://github.com/mattlab76/ccsm.git
+	sha256sums = SKIP
+
+pkgname = ccsm-git
