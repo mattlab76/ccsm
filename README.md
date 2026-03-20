@@ -11,9 +11,9 @@ A terminal-based session manager for [Claude Code](https://docs.anthropic.com/en
 ```
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                             ╔═╗ ╔═╗ ╔═╗ ╔╦╗                                 │
-│                             ║   ║   ╚═╗ ║║║                                 │
-│                             ╚═╝ ╚═╝ ╚═╝ ╩ ╩                                 │
+│                             ╔═╗ ╔═╗ ╔═╗ ╔╦╗                                  │
+│                             ║   ║   ╚═╗ ║║║                                  │
+│                             ╚═╝ ╚═╝ ╚═╝ ╩ ╩                                  │
 │                                                                              │
 │                    Claude Code Session Manager v1.0.0                        │
 │                                                                              │
@@ -23,9 +23,9 @@ A terminal-based session manager for [Claude Code](https://docs.anthropic.com/en
 │                                                                              │
 │      Letzte Sessions  (a-e zum Direktstart)                                  │
 │                                                                              │
-│      a) 2026-03-20  PV Dashboard Responsive Fix  ~/appsDev/energie-webapp   │
-│      b) 2026-03-19  Vaultwarden Docker Setup  ~/mattlab-infra               │
-│      c) 2026-03-18  OPNsense Firewall Audit  ~/opnsense-audit              │
+│      a) 2026-03-20  PV Dashboard Responsive Fix  ~/appsDev/energie-webapp    │
+│      b) 2026-03-19  Vaultwarden Docker Setup  ~/mattlab-infra                │
+│      c) 2026-03-18  OPNsense Firewall Audit  ~/opnsense-audit                │
 │                                                                              │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
