@@ -408,23 +408,38 @@ show_menu() {
         echo -e "${BOLD}$(menu_item "${CYAN}$(t menu_recent)  ${DIM}($(t menu_direct_hint))${RESET}${BOLD}")${RESET}"
         echo -e "${BOLD}${EMPTY_LINE}${RESET}"
 
-        # Calculate column widths based on available space
-        # Available: INNER - 6 (padding) - 4 (key) - 12 (date) - 4 (spacing) = rest for subject+dir+tags+tokens
-        local avail=$((INNER - 26))
-        local w_subj=$((avail * 35 / 100))  # 35%
-        local w_dir=$((avail * 25 / 100))    # 25%
-        local w_tags=$((avail * 20 / 100))   # 20%
-        local w_tok=$((avail * 20 / 100))    # 20%
+        # Column widths (proportional to available space)
+        local w_key=4 w_date=12
+        local avail=$((INNER - 8 - w_key - w_date - 7))  # 8=padding+borders, 7=separators
+        local w_subj=$((avail * 32 / 100))
+        local w_dir=$((avail * 25 / 100))
+        local w_tags=$((avail * 18 / 100))
+        local w_tok=$((avail * 25 / 100))
         [ "$w_subj" -lt 15 ] && w_subj=15
         [ "$w_dir" -lt 10 ] && w_dir=10
         [ "$w_tags" -lt 6 ] && w_tags=6
-        [ "$w_tok" -lt 8 ] && w_tok=8
+        [ "$w_tok" -lt 12 ] && w_tok=12
 
-        # Table header
+        # Build horizontal lines for inner table
+        local tl_key="" tl_date="" tl_subj="" tl_dir="" tl_tags="" tl_tok=""
+        for ((j=0; j<w_key;  j++)); do tl_key+="─";  done
+        for ((j=0; j<w_date; j++)); do tl_date+="─"; done
+        for ((j=0; j<w_subj; j++)); do tl_subj+="─"; done
+        for ((j=0; j<w_dir;  j++)); do tl_dir+="─";  done
+        for ((j=0; j<w_tags; j++)); do tl_tags+="─"; done
+        for ((j=0; j<w_tok;  j++)); do tl_tok+="─";  done
+
+        # Table top border
+        echo -e "${BOLD}$(menu_item "${DIM}┌${tl_key}┬${tl_date}┬${tl_subj}┬${tl_dir}┬${tl_tags}┬${tl_tok}┐${RESET}")${RESET}"
+
+        # Header row
         local hdr
-        printf -v hdr "${DIM}%-4s %-12s %-${w_subj}s %-${w_dir}s %-${w_tags}s %s${RESET}" \
-            "" "$(t sessions_col_date)" "$(t sessions_col_subject)" "$(t sessions_col_dir)" "$(t sessions_col_tags)" "$(t tokens_label)"
-        echo -e "${BOLD}$(menu_item "$hdr")${RESET}"
+        printf -v hdr "│%-${w_key}s│%-${w_date}s│%-${w_subj}s│%-${w_dir}s│%-${w_tags}s│%-${w_tok}s│" \
+            "" " $(t sessions_col_date)" " $(t sessions_col_subject)" " $(t sessions_col_dir)" " $(t sessions_col_tags)" " in/out"
+        echo -e "${BOLD}$(menu_item "${DIM}${hdr}${RESET}")${RESET}"
+
+        # Header separator
+        echo -e "${BOLD}$(menu_item "${DIM}├${tl_key}┼${tl_date}┼${tl_subj}┼${tl_dir}┼${tl_tags}┼${tl_tok}┤${RESET}")${RESET}"
 
         local keys=(a b c d e)
         local i=0
@@ -445,12 +460,15 @@ show_menu() {
             QUICK_BETREFF[$key]="$betreff"
 
             local row
-            printf -v row "${GREEN}%-4s${RESET} ${YELLOW}%-12s${RESET} %-${w_subj}s ${CYAN}%-${w_dir}s${RESET} ${MAGENTA}%-${w_tags}s${RESET} ${DIM}%s${RESET}" \
-                "${key})" "$datum" "$short_betreff" "$short_cwd_disp" "$tag_str" "$tok_str"
+            printf -v row "${DIM}│${RESET}${GREEN}%-${w_key}s${RESET}${DIM}│${RESET}${YELLOW} %-$((w_date-1))s${RESET}${DIM}│${RESET} %-$((w_subj-1))s${DIM}│${RESET}${CYAN} %-$((w_dir-1))s${RESET}${DIM}│${RESET}${MAGENTA} %-$((w_tags-1))s${RESET}${DIM}│${RESET}${DIM} %-$((w_tok-1))s${RESET}${DIM}│${RESET}" \
+                " ${key})" "$datum" "$short_betreff" "$short_cwd_disp" "$tag_str" "$tok_str"
             echo -e "${BOLD}$(menu_item "$row")${RESET}"
 
             i=$((i + 1))
         done < <(tac "$SESSION_LOG" | head -5)
+
+        # Table bottom border
+        echo -e "${BOLD}$(menu_item "${DIM}└${tl_key}┴${tl_date}┴${tl_subj}┴${tl_dir}┴${tl_tags}┴${tl_tok}┘${RESET}")${RESET}"
 
         echo -e "${BOLD}${EMPTY_LINE}${RESET}"
     fi
