@@ -449,25 +449,21 @@ show_main_menu() {
     local count=0
     [ -s "$SESSION_LOG" ] && count=$(wc -l < "$SESSION_LOG")
 
-    # Build box content: logo + menu inside one box
+    # Logo + menu in one box
     local box_lines=()
     box_lines+=("  ╔═╗ ╔═╗ ╔═╗ ╔╦╗   $(t title) v${CCSM_VERSION}        $count session(s)")
     box_lines+=("  ║   ║   ╚═╗ ║║║")
     box_lines+=("  ╚═╝ ╚═╝ ╚═╝ ╩ ╩")
+    box_lines+=("")
+    box_lines+=("  [1] $(t menu_new)")
+    box_lines+=("  [2] $(t menu_resume)")
+    box_lines+=("  [3] $(t menu_delete)")
+    box_lines+=("  [4] $(t menu_stats)")
+    box_lines+=("  [q] $(t menu_quit)")
 
     render_box "" "${box_lines[@]}"
     echo ""
-
-    # Menu choices inside gum choose (renders its own visual)
-    local choices=()
-    choices+=("$(t menu_new)")
-    choices+=("$(t menu_resume)")
-    choices+=("$(t menu_delete)")
-    choices+=("$(t menu_stats)")
-    choices+=("$(t menu_quit)")
-
-    MENU_CHOICE=$(printf '%s\n' "${choices[@]}" | \
-        gum choose --header="↑↓ navigate · Enter select · ESC quit" --height=8) || MENU_CHOICE="$(t menu_quit)"
+    echo -n "  > "; read -r MENU_CHOICE
 }
 
 ###############################################################################
@@ -1090,25 +1086,25 @@ main() {
         show_main_menu
 
         case "$MENU_CHOICE" in
-            *"$(t menu_new)"*)
+            1)
                 clear
                 echo "$(t msg_starting)"
                 echo ""
                 claude "$@"
                 save_session
                 ;;
-            *"$(t menu_resume)"*)
+            2)
                 if quick_resume; then
                     resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF" "$@"
                 fi
                 ;;
-            *"$(t menu_delete)"*)
+            3)
                 delete_session
                 ;;
-            *"$(t menu_stats)"*)
+            4)
                 show_stats
                 ;;
-            *"$(t menu_quit)"*)
+            q|Q|"")
                 clear
                 exit 0
                 ;;
