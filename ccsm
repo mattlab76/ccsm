@@ -187,10 +187,11 @@ format_tokens() {
         echo "0"
         return
     fi
+    # LC_ALL=C ensures dot as decimal separator
     if [ "$n" -ge 1000000 ] 2>/dev/null; then
-        printf "%.1fM" "$(echo "scale=1; $n/1000000" | bc)"
+        LC_ALL=C printf "%.1fM" "$(echo "scale=1; $n/1000000" | LC_ALL=C bc)"
     elif [ "$n" -ge 1000 ] 2>/dev/null; then
-        printf "%.1fk" "$(echo "scale=1; $n/1000" | bc)"
+        LC_ALL=C printf "%.1fk" "$(echo "scale=1; $n/1000" | LC_ALL=C bc)"
     else
         echo "$n"
     fi
@@ -230,22 +231,28 @@ build_table_rows() {
         TABLE_SIDS+=("$sid")
 
         local short_cwd="${cwd/#$HOME/\~}"
-        local short_betreff="${betreff:0:23}"
-        [ ${#betreff} -gt 23 ] && short_betreff="${short_betreff}.."
-        local short_cwd_d="${short_cwd:0:17}"
-        [ ${#short_cwd} -gt 17 ] && short_cwd_d="..${short_cwd: -15}"
+        local short_betreff="${betreff:0:20}"
+        [ ${#betreff} -gt 20 ] && short_betreff="${short_betreff}.."
+        local short_cwd_d="${short_cwd:0:15}"
+        [ ${#short_cwd} -gt 15 ] && short_cwd_d="..${short_cwd: -13}"
 
-        local tok_in="0" tok_out="0"
+        # Parse tokens: format is "total_in/total_out|last_in/last_out" or "total_in/total_out"
+        local tot_in="0" tot_out="0" last_in="0" last_out="0"
         if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
-            tok_in=$(echo "$tokens_col" | cut -d/ -f1)
-            tok_out=$(echo "$tokens_col" | cut -d/ -f2)
+            local total_part="${tokens_col%%|*}"
+            local last_part="${tokens_col#*|}"
+            [ "$last_part" = "$tokens_col" ] && last_part="$total_part"
+            tot_in=$(echo "$total_part" | cut -d/ -f1)
+            tot_out=$(echo "$total_part" | cut -d/ -f2)
+            last_in=$(echo "$last_part" | cut -d/ -f1)
+            last_out=$(echo "$last_part" | cut -d/ -f2)
         fi
-        local fmt_in fmt_out
-        fmt_in=$(format_tokens "$tok_in")
-        fmt_out=$(format_tokens "$tok_out")
 
         local row
-        printf -v row "%-3s %-12s %-25s %-19s %8s %8s" "$idx" "$datum" "$short_betreff" "$short_cwd_d" "$fmt_in" "$fmt_out"
+        printf -v row "%-3s %-12s %-22s %-17s %8s %8s %8s %8s" \
+            "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+            "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
+            "$(format_tokens "$last_in")" "$(format_tokens "$last_out")"
         rows+=("$row")
 
         [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
@@ -258,11 +265,11 @@ build_table_rows() {
 # Format a session table header line
 ###############################################################################
 table_header() {
-    printf "%-3s %-12s %-25s %-19s %8s %8s" "#" "Date" "Subject" "Directory" "Tok In" "Tok Out"
+    printf "%-3s %-12s %-22s %-17s %8s %8s %8s %8s" "#" "Date" "Subject" "Directory" "Tot In" "Tot Out" "Last In" "Last Out"
 }
 
 table_separator() {
-    printf '%s' "$(printf '%.0s─' {1..80})"
+    printf '%s' "$(printf '%.0s─' {1..100})"
 }
 
 ###############################################################################
@@ -508,42 +515,29 @@ delete_session() {
 
     clear
 
-    # Build box with full session table
-    local box_lines=()
-    box_lines+=("  $(t delete_title)")
-    box_lines+=("")
-    box_lines+=("  $(table_header)")
-    box_lines+=("  $(table_separator)")
-
+    # Build table rows once
     local table_output
     table_output=$(build_table_rows 0)
     local DELETE_SIDS=("${TABLE_SIDS[@]}")
 
-    while IFS= read -r row; do
-        [ -n "$row" ] && box_lines+=("  $row")
-    done <<< "$table_output"
-
-    render_box "" "${box_lines[@]}"
-    echo ""
-    gum style --foreground="$C_DIM" --margin="0 2" \
-        "  ↑↓ navigate · Space toggle · Enter delete · ESC cancel"
-    echo ""
-
-    # Build gum choose items
     local choose_items=()
-    local choose_table
-    choose_table=$(build_table_rows 0)
     while IFS= read -r row; do
         [ -n "$row" ] && choose_items+=("$row")
-    done <<< "$choose_table"
+    done <<< "$table_output"
 
-    if [ ${#choose_items[@]} -eq 0 ]; then
-        return
-    fi
+    [ ${#choose_items[@]} -eq 0 ] && return
+
+    # Show header + hints, then gum choose
+    gum style --foreground="$C_PRIMARY" --bold --margin="0 2" "$(t delete_title)"
+    echo ""
+    gum style --foreground="$C_DIM" --margin="0 2" "$(table_header)"
+    gum style --foreground="$C_DIM" --margin="0 2" "$(table_separator)"
+    echo ""
 
     local choices
     choices=$(printf '%s\n' "${choose_items[@]}" | \
-        gum choose --no-limit) || return
+        gum choose --no-limit \
+            --header="↑↓ navigate · Space toggle · Enter delete · ESC cancel") || return
 
     [ -z "$choices" ] && return
 
@@ -557,6 +551,11 @@ delete_session() {
             delete_sids+=("${DELETE_SIDS[$idx]}")
         fi
     done <<< "$choices"
+
+    [ ${#delete_sids[@]} -eq 0 ] && return
+
+    # Confirm
+    gum confirm "$(t delete_confirm) (${#delete_sids[@]} selected)" || return
 
     # Delete from log
     local tmplog="${SESSION_LOG}.tmp"
@@ -577,7 +576,7 @@ delete_session() {
     if [ "$del_count" -gt 0 ]; then
         local msg
         printf -v msg "$(t cleanup_done)" "$del_count"
-        gum style --foreground="$C_ACCENT" "  $msg"
+        gum style --foreground="$C_ACCENT" "  ✓ $msg"
         sleep 1
     fi
 }
@@ -611,22 +610,27 @@ search_sessions() {
             SEARCH_SIDS+=("$sid")
 
             local short_cwd="${cwd/#$HOME/\~}"
-            local short_betreff="${betreff:0:23}"
-            [ ${#betreff} -gt 23 ] && short_betreff="${short_betreff}.."
-            local short_cwd_d="${short_cwd:0:17}"
-            [ ${#short_cwd} -gt 17 ] && short_cwd_d="..${short_cwd: -15}"
+            local short_betreff="${betreff:0:20}"
+            [ ${#betreff} -gt 20 ] && short_betreff="${short_betreff}.."
+            local short_cwd_d="${short_cwd:0:15}"
+            [ ${#short_cwd} -gt 15 ] && short_cwd_d="..${short_cwd: -13}"
 
-            local tok_in="0" tok_out="0"
+            local tot_in="0" tot_out="0" last_in="0" last_out="0"
             if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
-                tok_in=$(echo "$tokens_col" | cut -d/ -f1)
-                tok_out=$(echo "$tokens_col" | cut -d/ -f2)
+                local total_part="${tokens_col%%|*}"
+                local last_part="${tokens_col#*|}"
+                [ "$last_part" = "$tokens_col" ] && last_part="$total_part"
+                tot_in=$(echo "$total_part" | cut -d/ -f1)
+                tot_out=$(echo "$total_part" | cut -d/ -f2)
+                last_in=$(echo "$last_part" | cut -d/ -f1)
+                last_out=$(echo "$last_part" | cut -d/ -f2)
             fi
-            local fmt_in fmt_out
-            fmt_in=$(format_tokens "$tok_in")
-            fmt_out=$(format_tokens "$tok_out")
 
             local row
-            printf -v row "%-3s %-12s %-25s %-19s %8s %8s" "$idx" "$datum" "$short_betreff" "$short_cwd_d" "$fmt_in" "$fmt_out"
+            printf -v row "%-3s %-12s %-22s %-17s %8s %8s %8s %8s" \
+                "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+                "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
+                "$(format_tokens "$last_in")" "$(format_tokens "$last_out")"
             search_rows+=("$row")
         fi
     done < <(tac "$SESSION_LOG")
@@ -902,15 +906,18 @@ save_session() {
                 --placeholder="$(t save_enter)") || new_betreff="$existing_betreff"
         fi
 
-        # Accumulate tokens
-        local new_tokens="$tokens"
-        if [ -n "$existing_tokens" ] && [ "$existing_tokens" != "0/0" ] && [ -n "$tokens" ] && [ "$tokens" != "0/0" ]; then
-            local old_in old_out cur_in cur_out
-            old_in=$(echo "$existing_tokens" | cut -d/ -f1)
-            old_out=$(echo "$existing_tokens" | cut -d/ -f2)
-            cur_in=$(echo "$tokens" | cut -d/ -f1)
-            cur_out=$(echo "$tokens" | cut -d/ -f2)
-            new_tokens="$(( old_in + cur_in ))/$(( old_out + cur_out ))"
+        # Accumulate tokens: total_in/total_out|last_in/last_out
+        # $tokens = current session's in/out from hook
+        local cur_in cur_out
+        cur_in=$(echo "$tokens" | cut -d/ -f1)
+        cur_out=$(echo "$tokens" | cut -d/ -f2)
+        local new_tokens="$tokens|$tokens"
+        if [ -n "$existing_tokens" ] && [ "$existing_tokens" != "0/0" ]; then
+            local old_total="${existing_tokens%%|*}"
+            local old_in old_out
+            old_in=$(echo "$old_total" | cut -d/ -f1)
+            old_out=$(echo "$old_total" | cut -d/ -f2)
+            new_tokens="$(( old_in + cur_in ))/$(( old_out + cur_out ))|${cur_in}/${cur_out}"
         fi
 
         local tmplog="${SESSION_LOG}.tmp"
@@ -971,7 +978,8 @@ $auto_betreff"; then
 
         # Save
         chosen_betreff=$(echo "$chosen_betreff" | tr '\t' ' ')
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$chosen_tags" "$tokens" >> "$SESSION_LOG"
+        # Store as total_in/total_out|last_in/last_out (first save: total = last)
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$chosen_tags" "${tokens}|${tokens}" >> "$SESSION_LOG"
         gum style --foreground="$C_ACCENT" "  $(t save_saved): $chosen_betreff"
     fi
 

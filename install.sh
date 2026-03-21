@@ -96,6 +96,13 @@ if ! command -v gum &>/dev/null; then
 fi
 echo -e "  ${GREEN}✓${RESET} gum"
 
+if ! command -v bc &>/dev/null; then
+    echo -e "${RED}bc ${T_NOT_INSTALLED}${RESET}"
+    echo "Install: sudo pacman -S bc  /  sudo apt install bc  /  brew install bc"
+    exit 1
+fi
+echo -e "  ${GREEN}✓${RESET} bc"
+
 if command -v fzf &>/dev/null; then
     echo -e "  ${GREEN}✓${RESET} fzf (${T_OPTIONAL})"
 else
