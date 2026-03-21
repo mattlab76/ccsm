@@ -149,10 +149,12 @@ L_EN[save_not_saved]="Not saved."
 L_EN[save_saved]="Session saved"
 L_EN[save_no_data]="No session data received (hook not triggered?)."
 L_EN[save_suggestions]="Subject suggestions:"
-L_EN[save_choose_prompt]="Pick suggestion (a-%s), type your own, or n=don't save: "
-L_EN[save_enter_prompt]="Enter subject or n=don't save: "
-L_EN[save_auto_subject]="Auto-subject"
-L_EN[save_use_auto]="Save with this subject? (y/n):"
+L_EN[save_want_save]="Save this session?"
+L_EN[save_accept_subject]="Accept this subject?"
+L_EN[save_enter_subject]="Enter subject: "
+L_EN[save_no_empty]="Cannot save without a subject."
+L_EN[save_retry_or_cancel]="Try again (t) or cancel (c)? "
+L_EN[save_auto_label]="Auto-subject"
 L_EN[save_tags_prompt]="Tags (e.g. #infra #webapp, Enter=none): "
 L_DE[save_title]="Session speichern"
 L_DE[save_dir]="Verzeichnis"
@@ -164,10 +166,12 @@ L_DE[save_not_saved]="Nicht gespeichert."
 L_DE[save_saved]="Session gespeichert"
 L_DE[save_no_data]="Keine Session-Daten empfangen (Hook nicht ausgelöst?)."
 L_DE[save_suggestions]="Betreff-Vorschläge:"
-L_DE[save_choose_prompt]="Vorschlag wählen (a-%s), eigenen eingeben, oder n=nicht speichern: "
-L_DE[save_enter_prompt]="Betreff eingeben oder n=nicht speichern: "
-L_DE[save_auto_subject]="Auto-Betreff"
-L_DE[save_use_auto]="Mit diesem Betreff speichern? (j/n):"
+L_DE[save_want_save]="Session speichern?"
+L_DE[save_accept_subject]="Betreff übernehmen?"
+L_DE[save_enter_subject]="Betreff eingeben: "
+L_DE[save_no_empty]="Ohne Betreff kann nicht gespeichert werden."
+L_DE[save_retry_or_cancel]="Nochmal (n) oder abbrechen (a)? "
+L_DE[save_auto_label]="Auto-Betreff"
 L_DE[save_tags_prompt]="Tags (z.B. #infra #webapp, Enter=keine): "
 
 # Search
@@ -827,52 +831,57 @@ PYEOF
 ###############################################################################
 choose_betreff() {
     local transcript="$1" cwd="$2"
-    local suggestions=()
-    local keys=(a b c d e)
     CHOSEN_BETREFF="__SKIP__"
 
+    local yes_char
+    yes_char=$(t confirm_yes)
+    local yn="(${yes_char^^}/${yes_char,,}=n)"
+
+    # Step 1: Do you want to save?
+    echo ""
+    echo -n "$(t save_want_save) [$(t confirm_yes)/n]: "; read -r save_yn
+    if ! is_yes "$save_yn" && [ -n "$save_yn" ]; then
+        CHOSEN_BETREFF="__SKIP__"
+        return
+    fi
+
+    # Generate auto-subject
+    local auto_betreff=""
     if [ -n "$transcript" ] && [ -f "$transcript" ]; then
-        while IFS= read -r line; do
-            suggestions+=("$line")
-        done < <(generate_suggestions "$transcript" "$cwd")
+        auto_betreff=$(generate_suggestions "$transcript" "$cwd" | head -1)
+    fi
+    if [ -z "$auto_betreff" ]; then
+        local dir_name
+        dir_name=$(basename "$cwd")
+        auto_betreff="Session $dir_name $(date '+%Y-%m-%d')"
     fi
 
-    local input=""
-    if [ ${#suggestions[@]} -gt 0 ]; then
-        echo -e "\n${BOLD}$(t save_suggestions)${RESET}"
-        for i in "${!suggestions[@]}"; do
-            echo -e "  ${GREEN}${keys[$i]})${RESET} ${suggestions[$i]}"
-        done
-        echo ""
-        local prompt_str
-        printf -v prompt_str "$(t save_choose_prompt)" "${keys[$((${#suggestions[@]}-1))]}"
-        echo -n "$prompt_str"; read -r input
-    else
-        echo -n "$(t save_enter_prompt)"; read -r input
+    # Step 2: Accept auto-subject?
+    echo -e "  $(t save_auto_label): ${CYAN}${auto_betreff}${RESET}"
+    echo -n "$(t save_accept_subject) [$(t confirm_yes)/n]: "; read -r accept_yn
+    if is_yes "$accept_yn" || [ -z "$accept_yn" ]; then
+        CHOSEN_BETREFF=$(echo "$auto_betreff" | tr '\t' ' ')
+        return
     fi
 
-    case "$input" in
-        n|N) CHOSEN_BETREFF="__SKIP__" ;;
-        a|b|c|d|e)
-            local idx=$(( $(printf '%d' "'$input") - $(printf '%d' "'a") ))
-            if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#suggestions[@]}" ]; then
-                CHOSEN_BETREFF=$(echo "${suggestions[$idx]}" | tr '\t' ' ')
-            else
-                echo -e "${YELLOW}$(t err_invalid)${RESET}"
-                CHOSEN_BETREFF="__SKIP__"
-            fi
-            ;;
-        "")
-            if [ ${#suggestions[@]} -gt 0 ]; then
-                CHOSEN_BETREFF=$(echo "${suggestions[0]}" | tr '\t' ' ')
-            else
-                local dir_name
-                dir_name=$(basename "$cwd")
-                CHOSEN_BETREFF="Session $dir_name $(date '+%Y-%m-%d')"
-            fi
-            ;;
-        *) CHOSEN_BETREFF=$(echo "$input" | tr '\t' ' ') ;;
-    esac
+    # Step 3: Enter custom subject (with retry loop)
+    while true; do
+        echo -n "$(t save_enter_subject)"; read -r custom
+        if [ -n "$custom" ]; then
+            CHOSEN_BETREFF=$(echo "$custom" | tr '\t' ' ')
+            return
+        fi
+
+        # Empty input
+        echo -e "${YELLOW}$(t save_no_empty)${RESET}"
+        echo -n "$(t save_retry_or_cancel)"; read -r retry
+        local retry_lower="${retry,,}"
+        # EN: t=try again, c=cancel / DE: n=nochmal, a=abbrechen
+        if [[ "$retry_lower" == "c" ]] || [[ "$retry_lower" == "a" ]]; then
+            CHOSEN_BETREFF="__SKIP__"
+            return
+        fi
+    done
 }
 
 ###############################################################################

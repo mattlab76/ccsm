@@ -1,6 +1,6 @@
 # Maintainer: Matthias Haas <matthias.haas@mattlab.at>
 pkgname=ccsm-git
-pkgver=1.1.0.r0.ga3516dd
+pkgver=1.2.0.r9.g910d66e
 pkgrel=1
 pkgdesc="Claude Code Session Manager - save, tag, search and resume Claude Code sessions"
 arch=('any')
