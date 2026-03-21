@@ -210,33 +210,79 @@ days_since() {
 }
 
 ###############################################################################
-# Build session table rows (array of formatted lines)
-# Populates TABLE_SIDS[] for index-based sid lookup
+# Session table with box-drawing borders
+# Column widths: # (3), Date (12), Subject (20), Dir (16), TotIn (7), TotOut (7), LastIn (7), LastOut (7)
 ###############################################################################
 TABLE_SIDS=()
 
-build_table_rows() {
+# Column widths
+_W_NUM=3; _W_DATE=12; _W_SUBJ=20; _W_DIR=16; _W_TI=7; _W_TO=7; _W_LI=7; _W_LO=7
+
+_hline() {
+    local char="${1:-─}"
+    local w=$2
+    local s=""
+    for ((i=0; i<w; i++)); do s+="$char"; done
+    echo -n "$s"
+}
+
+table_top() {
+    printf '┌%s┬%s┬%s┬%s┬%s┬%s┬%s┬%s┐' \
+        "$(_hline ─ $_W_NUM)" "$(_hline ─ $_W_DATE)" "$(_hline ─ $_W_SUBJ)" "$(_hline ─ $_W_DIR)" \
+        "$(_hline ─ $_W_TI)" "$(_hline ─ $_W_TO)" "$(_hline ─ $_W_LI)" "$(_hline ─ $_W_LO)"
+}
+
+table_mid() {
+    printf '├%s┼%s┼%s┼%s┼%s┼%s┼%s┼%s┤' \
+        "$(_hline ─ $_W_NUM)" "$(_hline ─ $_W_DATE)" "$(_hline ─ $_W_SUBJ)" "$(_hline ─ $_W_DIR)" \
+        "$(_hline ─ $_W_TI)" "$(_hline ─ $_W_TO)" "$(_hline ─ $_W_LI)" "$(_hline ─ $_W_LO)"
+}
+
+table_bottom() {
+    printf '└%s┴%s┴%s┴%s┴%s┴%s┴%s┴%s┘' \
+        "$(_hline ─ $_W_NUM)" "$(_hline ─ $_W_DATE)" "$(_hline ─ $_W_SUBJ)" "$(_hline ─ $_W_DIR)" \
+        "$(_hline ─ $_W_TI)" "$(_hline ─ $_W_TO)" "$(_hline ─ $_W_LI)" "$(_hline ─ $_W_LO)"
+}
+
+table_header_row() {
+    printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│%*s│%*s│' \
+        $_W_NUM " #" $_W_DATE " Date" $_W_SUBJ " Subject" $_W_DIR " Directory" \
+        $_W_TI "Tot In" $_W_TO "Tot Ou" $_W_LI "Lst In" $_W_LO "Lst Ou"
+}
+
+table_data_row() {
+    local num="$1" date="$2" subj="$3" dir="$4" ti="$5" to="$6" li="$7" lo="$8"
+    printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│%*s│%*s│' \
+        $_W_NUM " $num" $_W_DATE " $date" $_W_SUBJ " $subj" $_W_DIR " $dir" \
+        $_W_TI "$ti " $_W_TO "$to " $_W_LI "$li " $_W_LO "$lo "
+}
+
+# Build complete bordered table as array of lines
+# Sets TABLE_SIDS[] for sid lookup by row number
+build_table() {
     local max_items="${1:-0}"
     TABLE_SIDS=()
-    local rows=()
+    TABLE_LINES=()
     local idx=0
 
     if [ ! -s "$SESSION_LOG" ]; then
-        echo ""
         return
     fi
+
+    TABLE_LINES+=("$(table_top)")
+    TABLE_LINES+=("$(table_header_row)")
+    TABLE_LINES+=("$(table_mid)")
 
     while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
         idx=$((idx + 1))
         TABLE_SIDS+=("$sid")
 
         local short_cwd="${cwd/#$HOME/\~}"
-        local short_betreff="${betreff:0:20}"
-        [ ${#betreff} -gt 20 ] && short_betreff="${short_betreff}.."
-        local short_cwd_d="${short_cwd:0:15}"
-        [ ${#short_cwd} -gt 15 ] && short_cwd_d="..${short_cwd: -13}"
+        local short_betreff="${betreff:0:$((_W_SUBJ - 2))}"
+        [ ${#betreff} -gt $((_W_SUBJ - 2)) ] && short_betreff="${short_betreff}.."
+        local short_cwd_d="${short_cwd:0:$((_W_DIR - 2))}"
+        [ ${#short_cwd} -gt $((_W_DIR - 2)) ] && short_cwd_d="..${short_cwd: -$((_W_DIR - 4))}"
 
-        # Parse tokens: format is "total_in/total_out|last_in/last_out" or "total_in/total_out"
         local tot_in="0" tot_out="0" last_in="0" last_out="0"
         if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
             local total_part="${tokens_col%%|*}"
@@ -248,28 +294,45 @@ build_table_rows() {
             last_out=$(echo "$last_part" | cut -d/ -f2)
         fi
 
-        local row
-        printf -v row "%-3s %-12s %-22s %-17s %8s %8s %8s %8s" \
-            "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+        TABLE_LINES+=("$(table_data_row "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
             "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
-            "$(format_tokens "$last_in")" "$(format_tokens "$last_out")"
-        rows+=("$row")
+            "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")")
 
         [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
     done < <(tac "$SESSION_LOG")
 
-    printf '%s\n' "${rows[@]}"
+    TABLE_LINES+=("$(table_bottom)")
 }
 
-###############################################################################
-# Format a session table header line
-###############################################################################
-table_header() {
-    printf "%-3s %-12s %-22s %-17s %8s %8s %8s %8s" "#" "Date" "Subject" "Directory" "Tot In" "Tot Out" "Last In" "Last Out"
-}
+# Build plain rows for gum choose (no borders, just numbered rows for selection)
+build_choice_rows() {
+    local max_items="${1:-0}"
+    TABLE_SIDS=()
+    local idx=0
 
-table_separator() {
-    printf '%s' "$(printf '%.0s─' {1..100})"
+    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
+        idx=$((idx + 1))
+        TABLE_SIDS+=("$sid")
+
+        local short_betreff="${betreff:0:20}"
+        [ ${#betreff} -gt 20 ] && short_betreff="${short_betreff}.."
+        local short_cwd="${cwd/#$HOME/\~}"
+        local short_cwd_d="${short_cwd:0:16}"
+        [ ${#short_cwd} -gt 16 ] && short_cwd_d="..${short_cwd: -14}"
+
+        local tot_in="0" tot_out="0"
+        if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
+            local total_part="${tokens_col%%|*}"
+            tot_in=$(echo "$total_part" | cut -d/ -f1)
+            tot_out=$(echo "$total_part" | cut -d/ -f2)
+        fi
+
+        printf "%-3s %-12s %-20s %-16s %7s %7s\n" \
+            "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+            "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")"
+
+        [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
+    done < <(tac "$SESSION_LOG")
 }
 
 ###############################################################################
@@ -367,29 +430,21 @@ check_cleanup() {
 show_main_menu() {
     clear
 
-    local logo_line1="  C C S M  v${CCSM_VERSION}"
-    local logo_line2="  $(t title)"
-
-    # Build box content
-    local box_lines=()
-    box_lines+=("$logo_line1")
-    box_lines+=("$logo_line2")
-    box_lines+=("")
-
     local count=0
     [ -s "$SESSION_LOG" ] && count=$(wc -l < "$SESSION_LOG")
 
-    if [ -s "$SESSION_LOG" ]; then
-        box_lines+=("  Recent sessions ($count total):")
-        box_lines+=("")
-        box_lines+=("  $(table_header)")
-        box_lines+=("  $(table_separator)")
+    # Build box content
+    local box_lines=()
+    box_lines+=("  ╔═╗ ╔═╗ ╔═╗ ╔╦╗   $(t title) v${CCSM_VERSION}        $count session(s)")
+    box_lines+=("  ║   ║   ╚═╗ ║║║")
+    box_lines+=("  ╚═╝ ╚═╝ ╚═╝ ╩ ╩")
+    box_lines+=("")
 
-        local table_output
-        table_output=$(build_table_rows 5)
-        while IFS= read -r row; do
-            [ -n "$row" ] && box_lines+=("  $row")
-        done <<< "$table_output"
+    if [ -s "$SESSION_LOG" ]; then
+        build_table 5
+        for line in "${TABLE_LINES[@]}"; do
+            box_lines+=("  $line")
+        done
     else
         box_lines+=("  $(t sessions_none)")
     fi
@@ -426,51 +481,37 @@ quick_resume() {
 
     clear
 
-    # Build box with full session table
-    local box_lines=()
-    box_lines+=("  $(t menu_resume)")
-    box_lines+=("")
-    box_lines+=("  $(table_header)")
-    box_lines+=("  $(table_separator)")
-
-    local table_output
-    table_output=$(build_table_rows 0)
+    # Show bordered table
+    build_table 0
     local CHOICE_SIDS=("${TABLE_SIDS[@]}")
 
-    while IFS= read -r row; do
-        [ -n "$row" ] && box_lines+=("  $row")
-    done <<< "$table_output"
+    local box_lines=()
+    box_lines+=("  $(t menu_resume)        ${#CHOICE_SIDS[@]} session(s)")
+    box_lines+=("")
+    for line in "${TABLE_LINES[@]}"; do
+        box_lines+=("  $line")
+    done
 
     render_box "" "${box_lines[@]}"
     echo ""
-    gum style --foreground="$C_DIM" --margin="0 2" \
-        "  ↑↓ navigate · Enter resume · ESC back"
-    echo ""
 
-    # Build gum choose items (clean rows, no sid visible)
+    # Build choice rows for gum choose
     local choose_items=()
-    local choose_table
-    choose_table=$(build_table_rows 0)
     while IFS= read -r row; do
         [ -n "$row" ] && choose_items+=("$row")
-    done <<< "$choose_table"
+    done < <(build_choice_rows 0)
 
-    if [ ${#choose_items[@]} -eq 0 ]; then
-        return 1
-    fi
+    [ ${#choose_items[@]} -eq 0 ] && return 1
 
     local choice
     choice=$(printf '%s\n' "${choose_items[@]}" | \
-        gum choose) || return 1
+        gum choose --header="↑↓ navigate · Enter resume · ESC back") || return 1
 
-    # Extract the index number from the choice (first field)
     local sel_num
     sel_num=$(echo "$choice" | awk '{print $1}')
     local idx=$((sel_num - 1))
 
-    if [ "$idx" -lt 0 ] || [ "$idx" -ge "${#CHOICE_SIDS[@]}" ]; then
-        return 1
-    fi
+    [ "$idx" -lt 0 ] || [ "$idx" -ge "${#CHOICE_SIDS[@]}" ] && return 1
 
     local sid="${CHOICE_SIDS[$idx]}"
     local line
@@ -515,24 +556,26 @@ delete_session() {
 
     clear
 
-    # Build table rows once
-    local table_output
-    table_output=$(build_table_rows 0)
+    # Show bordered table
+    build_table 0
     local DELETE_SIDS=("${TABLE_SIDS[@]}")
 
+    local box_lines=()
+    box_lines+=("  $(t delete_title)")
+    box_lines+=("")
+    for line in "${TABLE_LINES[@]}"; do
+        box_lines+=("  $line")
+    done
+    render_box "" "${box_lines[@]}"
+    echo ""
+
+    # Build choice rows
     local choose_items=()
     while IFS= read -r row; do
         [ -n "$row" ] && choose_items+=("$row")
-    done <<< "$table_output"
+    done < <(build_choice_rows 0)
 
     [ ${#choose_items[@]} -eq 0 ] && return
-
-    # Show header + hints, then gum choose
-    gum style --foreground="$C_PRIMARY" --bold --margin="0 2" "$(t delete_title)"
-    echo ""
-    gum style --foreground="$C_DIM" --margin="0 2" "$(table_header)"
-    gum style --foreground="$C_DIM" --margin="0 2" "$(table_separator)"
-    echo ""
 
     local choices
     choices=$(printf '%s\n' "${choose_items[@]}" | \
@@ -600,9 +643,15 @@ search_sessions() {
         [ -z "$query" ] && return 1
     fi
 
+    # Search and collect matching sids
     local SEARCH_SIDS=()
-    local search_rows=()
+    local search_choose=()
+    local search_table_lines=()
     local idx=0
+
+    search_table_lines+=("$(table_top)")
+    search_table_lines+=("$(table_header_row)")
+    search_table_lines+=("$(table_mid)")
 
     while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
         if echo "$betreff $cwd $tags" | grep -qi "$query"; then
@@ -610,10 +659,10 @@ search_sessions() {
             SEARCH_SIDS+=("$sid")
 
             local short_cwd="${cwd/#$HOME/\~}"
-            local short_betreff="${betreff:0:20}"
-            [ ${#betreff} -gt 20 ] && short_betreff="${short_betreff}.."
-            local short_cwd_d="${short_cwd:0:15}"
-            [ ${#short_cwd} -gt 15 ] && short_cwd_d="..${short_cwd: -13}"
+            local short_betreff="${betreff:0:$((_W_SUBJ - 2))}"
+            [ ${#betreff} -gt $((_W_SUBJ - 2)) ] && short_betreff="${short_betreff}.."
+            local short_cwd_d="${short_cwd:0:$((_W_DIR - 2))}"
+            [ ${#short_cwd} -gt $((_W_DIR - 2)) ] && short_cwd_d="..${short_cwd: -$((_W_DIR - 4))}"
 
             local tot_in="0" tot_out="0" last_in="0" last_out="0"
             if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
@@ -626,49 +675,45 @@ search_sessions() {
                 last_out=$(echo "$last_part" | cut -d/ -f2)
             fi
 
-            local row
-            printf -v row "%-3s %-12s %-22s %-17s %8s %8s %8s %8s" \
-                "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+            search_table_lines+=("$(table_data_row "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
                 "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
-                "$(format_tokens "$last_in")" "$(format_tokens "$last_out")"
-            search_rows+=("$row")
+                "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")")
+
+            printf -v row "%-3s %-12s %-20s %-16s %7s %7s" \
+                "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+                "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")"
+            search_choose+=("$row")
         fi
     done < <(tac "$SESSION_LOG")
 
-    if [ ${#search_rows[@]} -eq 0 ]; then
+    if [ ${#SEARCH_SIDS[@]} -eq 0 ]; then
         gum style --foreground="$C_WARN" "$(t search_no_results)"
         sleep 1
         return 1
     fi
 
+    search_table_lines+=("$(table_bottom)")
+
     clear
 
     local box_lines=()
-    box_lines+=("  $(t search_title): '$query' (${#search_rows[@]})")
+    box_lines+=("  $(t search_title): '$query' (${#SEARCH_SIDS[@]})")
     box_lines+=("")
-    box_lines+=("  $(table_header)")
-    box_lines+=("  $(table_separator)")
-    for row in "${search_rows[@]}"; do
-        box_lines+=("  $row")
+    for line in "${search_table_lines[@]}"; do
+        box_lines+=("  $line")
     done
-
     render_box "" "${box_lines[@]}"
-    echo ""
-    gum style --foreground="$C_DIM" --margin="0 2" \
-        "  ↑↓ navigate · Enter resume · ESC back"
     echo ""
 
     local choice
-    choice=$(printf '%s\n' "${search_rows[@]}" | \
-        gum choose) || return 1
+    choice=$(printf '%s\n' "${search_choose[@]}" | \
+        gum choose --header="↑↓ navigate · Enter resume · ESC back") || return 1
 
     local sel_num
     sel_num=$(echo "$choice" | awk '{print $1}')
     local sel_idx=$((sel_num - 1))
 
-    if [ "$sel_idx" -lt 0 ] || [ "$sel_idx" -ge "${#SEARCH_SIDS[@]}" ]; then
-        return 1
-    fi
+    [ "$sel_idx" -lt 0 ] || [ "$sel_idx" -ge "${#SEARCH_SIDS[@]}" ] && return 1
 
     local sid="${SEARCH_SIDS[$sel_idx]}"
     local line
@@ -721,8 +766,11 @@ show_stats() {
     top_tags=$(cut -f5 "$SESSION_LOG" 2>/dev/null | grep -v '^$' | grep -v '^-$' | tr ' ' '\n' | sort | uniq -c | sort -rn | head -5)
 
     # Build session table
-    local table_output
-    table_output=$(build_table_rows 0)
+    build_table 0
+
+    # Separator line for sections
+    local sep
+    printf -v sep '%s' "$(printf '%.0s─' {1..90})"
 
     # Build box content
     local box_lines=()
@@ -736,8 +784,7 @@ show_stats() {
     box_lines+=("  Tokens in:    ${fmt_total_in}")
     box_lines+=("  Tokens out:   ${fmt_total_out}")
     box_lines+=("")
-    box_lines+=("  $(table_separator)")
-    box_lines+=("")
+    box_lines+=("  $sep")
     box_lines+=("  Top directories:")
     if [ -n "$top_dirs" ]; then
         while IFS= read -r dline; do
@@ -747,8 +794,7 @@ show_stats() {
 
     if [ -n "$top_tags" ]; then
         box_lines+=("")
-        box_lines+=("  $(table_separator)")
-        box_lines+=("")
+        box_lines+=("  $sep")
         box_lines+=("  Top tags:")
         while IFS= read -r tline; do
             local formatted
@@ -758,15 +804,12 @@ show_stats() {
     fi
 
     box_lines+=("")
-    box_lines+=("  $(table_separator)")
-    box_lines+=("")
+    box_lines+=("  $sep")
     box_lines+=("  All sessions:")
     box_lines+=("")
-    box_lines+=("  $(table_header)")
-    box_lines+=("  $(table_separator)")
-    while IFS= read -r row; do
-        [ -n "$row" ] && box_lines+=("  $row")
-    done <<< "$table_output"
+    for line in "${TABLE_LINES[@]}"; do
+        box_lines+=("  $line")
+    done
 
     render_box "" "${box_lines[@]}"
     echo ""
