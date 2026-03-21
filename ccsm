@@ -442,33 +442,43 @@ render_box() {
     # Manual box drawing with echo -e to support ANSI colors in content
     local cols
     cols=$(tput cols 2>/dev/null || echo 100)
-    local inner=$((cols - 6))
+    local inner=$((cols - 4))
     [ "$inner" -lt 60 ] && inner=60
 
-    # Top border
+    # Build horizontal line
     local hline=""
     for ((i=0; i<inner; i++)); do hline+="─"; done
-    echo -e "  ${A_TEAL}╭${hline}╮${A_RST}"
 
-    # Empty line
-    printf "  ${A_TEAL}│${A_RST}%-${inner}s${A_TEAL}│${A_RST}\n" ""
-
-    # Content lines
-    for line in "$@"; do
-        # Strip ANSI codes to calculate visible length for padding
+    # Helper: print a line with correct right-border alignment
+    _boxline() {
+        local content="$1"
+        # Get visible length (strip ANSI codes)
         local visible
-        visible=$(echo -e "$line" | sed 's/\x1b\[[0-9;]*m//g')
+        visible=$(echo -e "$content" | sed 's/\x1b\[[0-9;]*m//g')
         local vlen=${#visible}
         local pad=$((inner - vlen))
         [ "$pad" -lt 0 ] && pad=0
-        printf "  ${A_TEAL}│${A_RST} %b%${pad}s${A_TEAL}│${A_RST}\n" "$line" ""
+        local spaces=""
+        for ((i=0; i<pad; i++)); do spaces+=" "; done
+        echo -e "  \033[38;5;36m│\033[0m${content}${spaces}\033[38;5;36m│\033[0m"
+    }
+
+    # Top border
+    echo -e "  \033[38;5;36m╭${hline}╮\033[0m"
+
+    # Empty line
+    _boxline ""
+
+    # Content lines
+    for line in "$@"; do
+        _boxline " $line"
     done
 
     # Empty line
-    printf "  ${A_TEAL}│${A_RST}%-${inner}s${A_TEAL}│${A_RST}\n" ""
+    _boxline ""
 
     # Bottom border
-    echo -e "  ${A_TEAL}╰${hline}╯${A_RST}"
+    echo -e "  \033[38;5;36m╰${hline}╯\033[0m"
 }
 
 ###############################################################################
@@ -562,9 +572,9 @@ show_main_menu() {
 
     # Build box: header + sessions + menu
     local box_lines=()
-    box_lines+=("  ╔═╗ ╔═╗ ╔═╗ ╔╦╗   $(t title) v${CCSM_VERSION}        $count session(s)")
-    box_lines+=("  ║   ║   ╚═╗ ║║║")
-    box_lines+=("  ╚═╝ ╚═╝ ╚═╝ ╩ ╩")
+    box_lines+=("  ${A_VIOLET}╔═╗ ╔═╗ ╔═╗ ╔╦╗${A_RST}   ${A_BOLD}$(t title) v${CCSM_VERSION}${A_RST}        ${A_DIM}$count session(s)${A_RST}")
+    box_lines+=("  ${A_VIOLET}║   ║   ╚═╗ ║║║${A_RST}")
+    box_lines+=("  ${A_VIOLET}╚═╝ ╚═╝ ╚═╝ ╩ ╩${A_RST}")
     box_lines+=("")
     box_lines+=("$dline")
 
