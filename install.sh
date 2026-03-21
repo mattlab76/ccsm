@@ -89,6 +89,13 @@ if ! command -v python3 &>/dev/null; then
 fi
 echo -e "  ${GREEN}✓${RESET} python3"
 
+if ! command -v dialog &>/dev/null; then
+    echo -e "${RED}dialog ${T_NOT_INSTALLED}${RESET}"
+    echo "Install: sudo pacman -S dialog  /  sudo apt install dialog  /  brew install dialog"
+    exit 1
+fi
+echo -e "  ${GREEN}✓${RESET} dialog"
+
 if command -v fzf &>/dev/null; then
     echo -e "  ${GREEN}✓${RESET} fzf (${T_OPTIONAL})"
 else
