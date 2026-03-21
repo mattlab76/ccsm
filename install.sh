@@ -89,12 +89,12 @@ if ! command -v python3 &>/dev/null; then
 fi
 echo -e "  ${GREEN}✓${RESET} python3"
 
-if ! command -v dialog &>/dev/null; then
-    echo -e "${RED}dialog ${T_NOT_INSTALLED}${RESET}"
-    echo "Install: sudo pacman -S dialog  /  sudo apt install dialog  /  brew install dialog"
+if ! command -v gum &>/dev/null; then
+    echo -e "${RED}gum ${T_NOT_INSTALLED}${RESET}"
+    echo "Install: sudo pacman -S gum  /  brew install gum  /  go install github.com/charmbracelet/gum@latest"
     exit 1
 fi
-echo -e "  ${GREEN}✓${RESET} dialog"
+echo -e "  ${GREEN}✓${RESET} gum"
 
 if command -v fzf &>/dev/null; then
     echo -e "  ${GREEN}✓${RESET} fzf (${T_OPTIONAL})"
