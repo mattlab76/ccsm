@@ -216,7 +216,7 @@ days_since() {
 TABLE_SIDS=()
 
 # Column widths
-_W_NUM=3; _W_DATE=12; _W_SUBJ=20; _W_DIR=16; _W_TI=7; _W_TO=7; _W_LI=7; _W_LO=7
+_W_NUM=3; _W_DATE=12; _W_SUBJ=22; _W_DIR=18; _W_TI=9; _W_TO=9; _W_LI=9; _W_LO=9
 
 _hline() {
     local char="${1:-─}"
@@ -247,7 +247,7 @@ table_bottom() {
 table_header_row() {
     printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│%*s│%*s│' \
         $_W_NUM " #" $_W_DATE " Date" $_W_SUBJ " Subject" $_W_DIR " Directory" \
-        $_W_TI "Tot In" $_W_TO "Tot Ou" $_W_LI "Lst In" $_W_LO "Lst Ou"
+        $_W_TI "Total In " $_W_TO "Total Out" $_W_LI " Last In " $_W_LO "Last Out "
 }
 
 table_data_row() {
