@@ -29,10 +29,10 @@ CCSM_LANG="${CCSM_LANG:-}"
 
 # Language detection
 if [[ -z "${CCSM_LANG:-}" ]]; then
- case "${LC_ALL:-${LANG:-}}" in
- de*) CCSM_LANG="de" ;;
- *) CCSM_LANG="en" ;;
- esac
+    case "${LC_ALL:-${LANG:-}}" in
+        de*) CCSM_LANG="de" ;;
+        *) CCSM_LANG="en" ;;
+    esac
 fi
 
 ###############################################################################
@@ -115,45 +115,45 @@ L_DE[stats_none]="Keine Sessions vorhanden."
 L_DE[confirm_yes]="j"
 
 t() {
- local key="$1"
- if [[ "$CCSM_LANG" == "de" ]]; then
- echo "${L_DE[$key]:-${L_EN[$key]:-$key}}"
- else
- echo "${L_EN[$key]:-$key}"
- fi
+    local key="$1"
+    if [[ "$CCSM_LANG" == "de" ]]; then
+        echo "${L_DE[$key]:-${L_EN[$key]:-$key}}"
+    else
+        echo "${L_EN[$key]:-$key}"
+    fi
 }
 
 is_yes() {
- local input="$1" yes_char
- yes_char=$(t confirm_yes)
- [[ "${input,,}" == "${yes_char,,}" ]]
+    local input="$1" yes_char
+    yes_char=$(t confirm_yes)
+    [[ "${input,,}" == "${yes_char,,}" ]]
 }
 
 # Theme colors
-C_PRIMARY="#7C3AED" # Violet
+C_PRIMARY="#7C3AED"   # Violet
 C_SECONDARY="#0D9488" # Teal
-C_ACCENT="#22C55E" # Green
-C_WARN="#F59E0B" # Amber
-C_DIM="#6B7280" # Gray
+C_ACCENT="#22C55E"    # Green
+C_WARN="#F59E0B"      # Amber
+C_DIM="#6B7280"       # Gray
 
 ###############################################################################
 # Check dependencies (skipped in test mode)
 ###############################################################################
 if [[ "${CCSM_TESTING:-}" != "true" ]]; then
- if ! command -v claude &>/dev/null; then
- echo "$(t err_no_claude)"
- exit 1
- fi
- if ! command -v gum &>/dev/null; then
- if ! command -v dialog &>/dev/null; then
- echo "Error: gum or dialog required. Install: sudo pacman -S gum"
- exit 1
- fi
- # Fallback to dialog version
- echo "Note: Install 'gum' for a better experience (sudo pacman -S gum)"
- echo "Falling back to dialog..."
- sleep 1
- fi
+    if ! command -v claude &>/dev/null; then
+        echo "$(t err_no_claude)"
+        exit 1
+    fi
+    if ! command -v gum &>/dev/null; then
+        if ! command -v dialog &>/dev/null; then
+            echo "Error: gum or dialog required. Install: sudo pacman -S gum"
+            exit 1
+        fi
+        # Fallback to dialog version
+        echo "Note: Install 'gum' for a better experience (sudo pacman -S gum)"
+        echo "Falling back to dialog..."
+        sleep 1
+    fi
 fi
 
 export CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=5000
@@ -179,412 +179,605 @@ mkdir -p "$TMPDIR"
 gum() { command gum "$@" 2>/dev/tty; }
 
 ###############################################################################
+# Token formatting: 1353202 -> "1.4M", 47567 -> "47.6k", 102 -> "102"
+###############################################################################
+format_tokens() {
+    local n="$1"
+    if [[ -z "$n" ]] || [[ "$n" == "0" ]]; then
+        echo "0"
+        return
+    fi
+    if [ "$n" -ge 1000000 ] 2>/dev/null; then
+        printf "%.1fM" "$(echo "scale=1; $n/1000000" | bc)"
+    elif [ "$n" -ge 1000 ] 2>/dev/null; then
+        printf "%.1fk" "$(echo "scale=1; $n/1000" | bc)"
+    else
+        echo "$n"
+    fi
+}
+
+###############################################################################
 # Helper: days since date
 ###############################################################################
 days_since() {
- local date_str="$1"
- local now today_sec date_sec
- now=$(date '+%Y-%m-%d')
- today_sec=$(date -d "$now" '+%s' 2>/dev/null) || today_sec=$(date '+%s')
- date_sec=$(date -d "$date_str" '+%s' 2>/dev/null) || return 1
- echo $(( (today_sec - date_sec) / 86400 ))
+    local date_str="$1"
+    local now today_sec date_sec
+    now=$(date '+%Y-%m-%d')
+    today_sec=$(date -d "$now" '+%s' 2>/dev/null) || today_sec=$(date '+%s')
+    date_sec=$(date -d "$date_str" '+%s' 2>/dev/null) || return 1
+    echo $(( (today_sec - date_sec) / 86400 ))
 }
 
 ###############################################################################
-# Show styled header
+# Build session table rows (array of formatted lines)
+# Populates TABLE_SIDS[] for index-based sid lookup
 ###############################################################################
-show_header() {
- echo ""
- gum style \
- --foreground="$C_PRIMARY" \
- --border="rounded" \
- --border-foreground="$C_SECONDARY" \
- --padding="1 3" \
- --margin="0 2" \
- --bold \
- "╔═╗ ╔═╗ ╔═╗ ╔╦╗" \
- "║ ║ ╚═╗ ║║║" \
- "╚═╝ ╚═╝ ╚═╝ ╩ ╩" \
- "" \
- "$(t title) v${CCSM_VERSION}"
+TABLE_SIDS=()
 
- local count=0
- [ -s "$SESSION_LOG" ] && count=$(wc -l < "$SESSION_LOG")
- gum style --foreground="$C_DIM" --margin="0 4" "$count session(s)"
+build_table_rows() {
+    local max_items="${1:-0}"
+    TABLE_SIDS=()
+    local rows=()
+    local idx=0
+
+    if [ ! -s "$SESSION_LOG" ]; then
+        echo ""
+        return
+    fi
+
+    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
+        idx=$((idx + 1))
+        TABLE_SIDS+=("$sid")
+
+        local short_cwd="${cwd/#$HOME/\~}"
+        local short_betreff="${betreff:0:23}"
+        [ ${#betreff} -gt 23 ] && short_betreff="${short_betreff}.."
+        local short_cwd_d="${short_cwd:0:17}"
+        [ ${#short_cwd} -gt 17 ] && short_cwd_d="..${short_cwd: -15}"
+
+        local tok_in="0" tok_out="0"
+        if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
+            tok_in=$(echo "$tokens_col" | cut -d/ -f1)
+            tok_out=$(echo "$tokens_col" | cut -d/ -f2)
+        fi
+        local fmt_in fmt_out
+        fmt_in=$(format_tokens "$tok_in")
+        fmt_out=$(format_tokens "$tok_out")
+
+        local row
+        printf -v row "%-3s %-12s %-25s %-19s %8s %8s" "$idx" "$datum" "$short_betreff" "$short_cwd_d" "$fmt_in" "$fmt_out"
+        rows+=("$row")
+
+        [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
+    done < <(tac "$SESSION_LOG")
+
+    printf '%s\n' "${rows[@]}"
 }
 
 ###############################################################################
-# Show session table
+# Format a session table header line
 ###############################################################################
-show_session_table() {
- local max_items="${1:-0}"
+table_header() {
+    printf "%-3s %-12s %-25s %-19s %8s %8s" "#" "Date" "Subject" "Directory" "Tok In" "Tok Out"
+}
 
- if [ ! -s "$SESSION_LOG" ]; then
- gum style --foreground="$C_WARN" "$(t sessions_none)"
- return 1
- fi
-
- # Build formatted table lines
- local header
- printf -v header " %-12s %-35s %-22s %-12s %s" "Date" "Subject" "Directory" "Tags" "Tokens"
- local lines=()
- lines+=("$header")
- lines+=(" $(printf '─%.0s' {1..90})")
-
- local count=0
- while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
- local short_cwd="${cwd/#$HOME/\~}"
- local short_betreff="${betreff:0:33}"
- [ ${#betreff} -gt 33 ] && short_betreff="${short_betreff}.."
- local short_cwd_d="${short_cwd:0:20}"
- [ ${#short_cwd} -gt 20 ] && short_cwd_d="..${short_cwd: -18}"
- local tag_str="${tags:--}"
- [ "$tag_str" = "-" ] && tag_str=""
- local tok_str="${tokens_col:-}"
- [ "$tok_str" = "0/0" ] && tok_str=""
-
- local row
- printf -v row " %-12s %-35s %-22s %-12s %s" "$datum" "$short_betreff" "$short_cwd_d" "$tag_str" "$tok_str"
- lines+=("$row")
-
- count=$((count + 1))
- [ "$max_items" -gt 0 ] && [ "$count" -ge "$max_items" ] && break
- done < <(tac "$SESSION_LOG")
-
- gum style --foreground="$C_DIM" "${lines[@]}"
+table_separator() {
+    printf '%s' "$(printf '%.0s─' {1..80})"
 }
 
 ###############################################################################
-# Build session choices for gum choose
+# Render a unified box with gum style
 ###############################################################################
-build_choices() {
- local max_items="${1:-0}"
- local count=0
- while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
- local short_cwd="${cwd/#$HOME/\~}"
- local short_betreff="${betreff:0:35}"
- [ ${#betreff} -gt 35 ] && short_betreff="${short_betreff}.."
- local tag_str=""
- [ -n "$tags" ] && [ "$tags" != "-" ] && tag_str=" [$tags]"
- local tok_str=""
- [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ] && tok_str=" ${tokens_col}"
- echo "${datum} ${short_betreff}${tag_str}${tok_str} ${short_cwd} ::${sid}::"
- count=$((count + 1))
- [ "$max_items" -gt 0 ] && [ "$count" -ge "$max_items" ] && break
- done < <(tac "$SESSION_LOG")
-}
-
-###############################################################################
-# Extract session ID from choice string
-###############################################################################
-extract_sid() {
- echo "$1" | grep -oP '::.*?::' | tr -d ':'
+render_box() {
+    local title="$1"
+    shift
+    # All remaining args are content lines
+    gum style \
+        --foreground="$C_PRIMARY" \
+        --border="rounded" \
+        --border-foreground="$C_SECONDARY" \
+        --padding="1 2" \
+        --margin="0 1" \
+        "$title" "$@"
 }
 
 ###############################################################################
 # Cleanup old sessions
 ###############################################################################
 check_cleanup() {
- [ ! -s "$SESSION_LOG" ] && return
- [ "$CLEANUP_DAYS" -eq 0 ] 2>/dev/null && return
+    [ ! -s "$SESSION_LOG" ] && return
+    [ "$CLEANUP_DAYS" -eq 0 ] 2>/dev/null && return
 
- local old_items=()
- while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
- local age
- age=$(days_since "$datum" 2>/dev/null) || continue
- if [ "$age" -ge "$CLEANUP_DAYS" ]; then
- old_items+=("${datum} (${age}d) ${betreff} ::${sid}::")
- fi
- done < "$SESSION_LOG"
+    local old_sids=() old_labels=()
+    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
+        local age
+        age=$(days_since "$datum" 2>/dev/null) || continue
+        if [ "$age" -ge "$CLEANUP_DAYS" ]; then
+            old_sids+=("$sid")
+            old_labels+=("${datum} (${age}d) ${betreff}")
+        fi
+    done < "$SESSION_LOG"
 
- [ ${#old_items[@]} -eq 0 ] && return
+    [ ${#old_sids[@]} -eq 0 ] && return
 
- local cleanup_title
- printf -v cleanup_title "$(t cleanup_title)" "$CLEANUP_DAYS"
+    local cleanup_title
+    printf -v cleanup_title "$(t cleanup_title)" "$CLEANUP_DAYS"
 
- gum style --foreground="$C_WARN" --bold --margin="1 2" "$cleanup_title"
+    # Build numbered choices
+    local choices=()
+    for i in "${!old_labels[@]}"; do
+        local num=$((i + 1))
+        choices+=("$(printf '%-3s %s' "$num" "${old_labels[$i]}")")
+    done
 
- local to_delete
- to_delete=$(printf '%s\n' "${old_items[@]}" | \
- gum choose --no-limit \
- --header="Space=select Enter=confirm (select sessions to DELETE)" \
- ) || return
+    render_box "$cleanup_title" "" "$(printf '%s\n' "${choices[@]}")"
 
- [ -z "$to_delete" ] && return
+    local to_delete
+    to_delete=$(printf '%s\n' "${choices[@]}" | \
+        gum choose --no-limit \
+            --header="Space=select Enter=confirm (select sessions to DELETE)" \
+        ) || return
 
- local tmplog="${SESSION_LOG}.tmp"
- local del_count=0
- while IFS=$'\t' read -r s c b d t_col tk; do
- if echo "$to_delete" | grep -q "::${s}::"; then
- del_count=$((del_count + 1))
- else
- printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
- fi
- done < "$SESSION_LOG" > "$tmplog"
- mv "$tmplog" "$SESSION_LOG"
+    [ -z "$to_delete" ] && return
 
- if [ "$del_count" -gt 0 ]; then
- local msg
- printf -v msg "$(t cleanup_done)" "$del_count"
- gum style --foreground="$C_ACCENT" "$msg"
- sleep 1
- fi
+    # Extract selected indices and map to sids
+    local delete_sids=()
+    while IFS= read -r selected; do
+        local sel_num
+        sel_num=$(echo "$selected" | awk '{print $1}')
+        local idx=$((sel_num - 1))
+        if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#old_sids[@]}" ]; then
+            delete_sids+=("${old_sids[$idx]}")
+        fi
+    done <<< "$to_delete"
+
+    local tmplog="${SESSION_LOG}.tmp"
+    local del_count=0
+    while IFS=$'\t' read -r s c b d t_col tk; do
+        local sid_match=false
+        for del_sid in "${delete_sids[@]}"; do
+            [ "$s" = "$del_sid" ] && sid_match=true && break
+        done
+        if $sid_match; then
+            del_count=$((del_count + 1))
+        else
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+        fi
+    done < "$SESSION_LOG" > "$tmplog"
+    mv "$tmplog" "$SESSION_LOG"
+
+    if [ "$del_count" -gt 0 ]; then
+        local msg
+        printf -v msg "$(t cleanup_done)" "$del_count"
+        gum style --foreground="$C_ACCENT" "$msg"
+        sleep 1
+    fi
 }
 
 ###############################################################################
 # Main menu
 ###############################################################################
 show_main_menu() {
- clear
- show_header
- echo ""
+    clear
 
- # Show recent sessions table
- if [ -s "$SESSION_LOG" ]; then
- gum style --foreground="$C_DIM" --margin="0 4" "Recent sessions:"
- show_session_table 5
- echo ""
- fi
+    local logo_line1="  C C S M  v${CCSM_VERSION}"
+    local logo_line2="  $(t title)"
 
- # Menu choices
- local choices=()
- choices+=("$(t menu_new)")
- choices+=("$(t menu_resume)")
- choices+=("$(t menu_delete)")
- choices+=("$(t menu_stats)")
- choices+=("$(t menu_quit)")
+    # Build box content
+    local box_lines=()
+    box_lines+=("$logo_line1")
+    box_lines+=("$logo_line2")
+    box_lines+=("")
 
- MENU_CHOICE=$(printf '%s\n' "${choices[@]}" | \
- gum choose \
- --header="↑↓ navigate · Enter select · ESC quit" \
- --height=7) || MENU_CHOICE="$(t menu_quit)"
+    local count=0
+    [ -s "$SESSION_LOG" ] && count=$(wc -l < "$SESSION_LOG")
+
+    if [ -s "$SESSION_LOG" ]; then
+        box_lines+=("  Recent sessions ($count total):")
+        box_lines+=("")
+        box_lines+=("  $(table_header)")
+        box_lines+=("  $(table_separator)")
+
+        local table_output
+        table_output=$(build_table_rows 5)
+        while IFS= read -r row; do
+            [ -n "$row" ] && box_lines+=("  $row")
+        done <<< "$table_output"
+    else
+        box_lines+=("  $(t sessions_none)")
+    fi
+
+    render_box "" "${box_lines[@]}"
+    echo ""
+
+    # Navigation hint below box
+    gum style --foreground="$C_DIM" --margin="0 2" \
+        "  ↑↓ navigate · Enter select · ESC quit"
+    echo ""
+
+    # Menu choices
+    local choices=()
+    choices+=("$(t menu_new)")
+    choices+=("$(t menu_resume)")
+    choices+=("$(t menu_delete)")
+    choices+=("$(t menu_stats)")
+    choices+=("$(t menu_quit)")
+
+    MENU_CHOICE=$(printf '%s\n' "${choices[@]}" | \
+        gum choose --height=7) || MENU_CHOICE="$(t menu_quit)"
 }
 
 ###############################################################################
-# Quick resume (select from recent sessions)
+# Browse / search sessions
 ###############################################################################
 quick_resume() {
- if [ ! -s "$SESSION_LOG" ]; then
- gum style --foreground="$C_WARN" "$(t sessions_none)"
- sleep 1
- return 1
- fi
+    if [ ! -s "$SESSION_LOG" ]; then
+        gum style --foreground="$C_WARN" "$(t sessions_none)"
+        sleep 1
+        return 1
+    fi
 
- local choice
- choice=$(build_choices | \
- gum choose \
- --header="$(t menu_resume)  [↑↓ navigate · Enter select · ESC back]" \
- ) || return 1
+    clear
 
- local sid
- sid=$(extract_sid "$choice")
- [ -z "$sid" ] && return 1
+    # Build box with full session table
+    local box_lines=()
+    box_lines+=("  $(t menu_resume)")
+    box_lines+=("")
+    box_lines+=("  $(table_header)")
+    box_lines+=("  $(table_separator)")
 
- local line
- line=$(grep "^${sid}	" "$SESSION_LOG")
- SELECTED_SID=$(echo "$line" | cut -f1)
- SELECTED_CWD=$(echo "$line" | cut -f2)
- SELECTED_BETREFF=$(echo "$line" | cut -f3)
- return 0
+    local table_output
+    table_output=$(build_table_rows 0)
+    local CHOICE_SIDS=("${TABLE_SIDS[@]}")
+
+    while IFS= read -r row; do
+        [ -n "$row" ] && box_lines+=("  $row")
+    done <<< "$table_output"
+
+    render_box "" "${box_lines[@]}"
+    echo ""
+    gum style --foreground="$C_DIM" --margin="0 2" \
+        "  ↑↓ navigate · Enter resume · ESC back"
+    echo ""
+
+    # Build gum choose items (clean rows, no sid visible)
+    local choose_items=()
+    local choose_table
+    choose_table=$(build_table_rows 0)
+    while IFS= read -r row; do
+        [ -n "$row" ] && choose_items+=("$row")
+    done <<< "$choose_table"
+
+    if [ ${#choose_items[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    local choice
+    choice=$(printf '%s\n' "${choose_items[@]}" | \
+        gum choose) || return 1
+
+    # Extract the index number from the choice (first field)
+    local sel_num
+    sel_num=$(echo "$choice" | awk '{print $1}')
+    local idx=$((sel_num - 1))
+
+    if [ "$idx" -lt 0 ] || [ "$idx" -ge "${#CHOICE_SIDS[@]}" ]; then
+        return 1
+    fi
+
+    local sid="${CHOICE_SIDS[$idx]}"
+    local line
+    line=$(grep "^${sid}	" "$SESSION_LOG")
+    SELECTED_SID=$(echo "$line" | cut -f1)
+    SELECTED_CWD=$(echo "$line" | cut -f2)
+    SELECTED_BETREFF=$(echo "$line" | cut -f3)
+    return 0
 }
 
 ###############################################################################
 # Resume session
 ###############################################################################
 resume_session() {
- local sid="$1" cwd="$2" betreff="$3"
- shift 3
+    local sid="$1" cwd="$2" betreff="$3"
+    shift 3
 
- clear
- gum style --foreground="$C_ACCENT" --bold \
- "$(t msg_switching): $cwd" \
- "$(t msg_resuming): $betreff"
- echo ""
+    clear
+    gum style --foreground="$C_ACCENT" --bold \
+        "$(t msg_switching): $cwd" \
+        "$(t msg_resuming): $betreff"
+    echo ""
 
- cd "$cwd" || {
- gum style --foreground="$C_WARN" "$(t err_no_dir): $cwd"
- sleep 2
- return 1
- }
- claude --resume "$sid" "$@"
- save_session
+    cd "$cwd" || {
+        gum style --foreground="$C_WARN" "$(t err_no_dir): $cwd"
+        sleep 2
+        return 1
+    }
+    claude --resume "$sid" "$@"
+    save_session
 }
 
 ###############################################################################
 # Delete session
 ###############################################################################
 delete_session() {
- if [ ! -s "$SESSION_LOG" ]; then
- gum style --foreground="$C_WARN" "$(t sessions_none)"
- sleep 1
- return
- fi
+    if [ ! -s "$SESSION_LOG" ]; then
+        gum style --foreground="$C_WARN" "$(t sessions_none)"
+        sleep 1
+        return
+    fi
 
- local choices
- choices=$(build_choices | \
- gum choose --no-limit \
- --header="$(t delete_title)  [Space=select, Enter=confirm, ESC=cancel]" \
- ) || return
+    clear
 
- [ -z "$choices" ] && return
+    # Build box with full session table
+    local box_lines=()
+    box_lines+=("  $(t delete_title)")
+    box_lines+=("")
+    box_lines+=("  $(table_header)")
+    box_lines+=("  $(table_separator)")
 
- # Count selected
- local del_count=0
- local tmplog="${SESSION_LOG}.tmp"
- while IFS=$'\t' read -r s c b d t_col tk; do
- local sid_match=false
- while IFS= read -r selected; do
- local sel_sid
- sel_sid=$(extract_sid "$selected")
- [ "$s" = "$sel_sid" ] && sid_match=true && break
- done <<< "$choices"
- if $sid_match; then
- del_count=$((del_count + 1))
- else
- printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
- fi
- done < "$SESSION_LOG" > "$tmplog"
- mv "$tmplog" "$SESSION_LOG"
+    local table_output
+    table_output=$(build_table_rows 0)
+    local DELETE_SIDS=("${TABLE_SIDS[@]}")
 
- if [ "$del_count" -gt 0 ]; then
- local msg
- printf -v msg "$(t cleanup_done)" "$del_count"
- gum style --foreground="$C_ACCENT" "✓ $msg"
- sleep 1
- fi
+    while IFS= read -r row; do
+        [ -n "$row" ] && box_lines+=("  $row")
+    done <<< "$table_output"
+
+    render_box "" "${box_lines[@]}"
+    echo ""
+    gum style --foreground="$C_DIM" --margin="0 2" \
+        "  ↑↓ navigate · Space toggle · Enter delete · ESC cancel"
+    echo ""
+
+    # Build gum choose items
+    local choose_items=()
+    local choose_table
+    choose_table=$(build_table_rows 0)
+    while IFS= read -r row; do
+        [ -n "$row" ] && choose_items+=("$row")
+    done <<< "$choose_table"
+
+    if [ ${#choose_items[@]} -eq 0 ]; then
+        return
+    fi
+
+    local choices
+    choices=$(printf '%s\n' "${choose_items[@]}" | \
+        gum choose --no-limit) || return
+
+    [ -z "$choices" ] && return
+
+    # Collect sids to delete
+    local delete_sids=()
+    while IFS= read -r selected; do
+        local sel_num
+        sel_num=$(echo "$selected" | awk '{print $1}')
+        local idx=$((sel_num - 1))
+        if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#DELETE_SIDS[@]}" ]; then
+            delete_sids+=("${DELETE_SIDS[$idx]}")
+        fi
+    done <<< "$choices"
+
+    # Delete from log
+    local tmplog="${SESSION_LOG}.tmp"
+    local del_count=0
+    while IFS=$'\t' read -r s c b d t_col tk; do
+        local sid_match=false
+        for del_sid in "${delete_sids[@]}"; do
+            [ "$s" = "$del_sid" ] && sid_match=true && break
+        done
+        if $sid_match; then
+            del_count=$((del_count + 1))
+        else
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+        fi
+    done < "$SESSION_LOG" > "$tmplog"
+    mv "$tmplog" "$SESSION_LOG"
+
+    if [ "$del_count" -gt 0 ]; then
+        local msg
+        printf -v msg "$(t cleanup_done)" "$del_count"
+        gum style --foreground="$C_ACCENT" "  $msg"
+        sleep 1
+    fi
 }
 
 ###############################################################################
 # Search sessions
 ###############################################################################
 search_sessions() {
- local query="$1"
+    local query="$1"
 
- if [ ! -s "$SESSION_LOG" ]; then
- gum style --foreground="$C_WARN" "$(t search_no_sessions)"
- sleep 1
- return 1
- fi
+    if [ ! -s "$SESSION_LOG" ]; then
+        gum style --foreground="$C_WARN" "$(t search_no_sessions)"
+        sleep 1
+        return 1
+    fi
 
- if [ -z "$query" ]; then
- query=$(gum input \
- --placeholder="$(t search_prompt)..." \
- ) || return 1
- [ -z "$query" ] && return 1
- fi
+    if [ -z "$query" ]; then
+        query=$(gum input \
+            --placeholder="$(t search_prompt)..." \
+            ) || return 1
+        [ -z "$query" ] && return 1
+    fi
 
- local results=()
- while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
- if echo "$betreff $cwd $tags" | grep -qi "$query"; then
- local short_cwd="${cwd/#$HOME/\~}"
- local short_betreff="${betreff:0:35}"
- local tag_str=""
- [ -n "$tags" ] && [ "$tags" != "-" ] && tag_str=" [$tags]"
- results+=("${datum} ${short_betreff}${tag_str} ${short_cwd} ::${sid}::")
- fi
- done < <(tac "$SESSION_LOG")
+    local SEARCH_SIDS=()
+    local search_rows=()
+    local idx=0
 
- if [ ${#results[@]} -eq 0 ]; then
- gum style --foreground="$C_WARN" "$(t search_no_results)"
- sleep 1
- return 1
- fi
+    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
+        if echo "$betreff $cwd $tags" | grep -qi "$query"; then
+            idx=$((idx + 1))
+            SEARCH_SIDS+=("$sid")
 
- local choice
- choice=$(printf '%s\n' "${results[@]}" | \
- gum choose \
- --header="$(t search_title): '$query' (${#results[@]})  [↑↓ · Enter · ESC]" \
- ) || return 1
+            local short_cwd="${cwd/#$HOME/\~}"
+            local short_betreff="${betreff:0:23}"
+            [ ${#betreff} -gt 23 ] && short_betreff="${short_betreff}.."
+            local short_cwd_d="${short_cwd:0:17}"
+            [ ${#short_cwd} -gt 17 ] && short_cwd_d="..${short_cwd: -15}"
 
- local sid
- sid=$(extract_sid "$choice")
- [ -z "$sid" ] && return 1
+            local tok_in="0" tok_out="0"
+            if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
+                tok_in=$(echo "$tokens_col" | cut -d/ -f1)
+                tok_out=$(echo "$tokens_col" | cut -d/ -f2)
+            fi
+            local fmt_in fmt_out
+            fmt_in=$(format_tokens "$tok_in")
+            fmt_out=$(format_tokens "$tok_out")
 
- local line
- line=$(grep "^${sid}	" "$SESSION_LOG")
- SELECTED_SID=$(echo "$line" | cut -f1)
- SELECTED_CWD=$(echo "$line" | cut -f2)
- SELECTED_BETREFF=$(echo "$line" | cut -f3)
- resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF"
+            local row
+            printf -v row "%-3s %-12s %-25s %-19s %8s %8s" "$idx" "$datum" "$short_betreff" "$short_cwd_d" "$fmt_in" "$fmt_out"
+            search_rows+=("$row")
+        fi
+    done < <(tac "$SESSION_LOG")
+
+    if [ ${#search_rows[@]} -eq 0 ]; then
+        gum style --foreground="$C_WARN" "$(t search_no_results)"
+        sleep 1
+        return 1
+    fi
+
+    clear
+
+    local box_lines=()
+    box_lines+=("  $(t search_title): '$query' (${#search_rows[@]})")
+    box_lines+=("")
+    box_lines+=("  $(table_header)")
+    box_lines+=("  $(table_separator)")
+    for row in "${search_rows[@]}"; do
+        box_lines+=("  $row")
+    done
+
+    render_box "" "${box_lines[@]}"
+    echo ""
+    gum style --foreground="$C_DIM" --margin="0 2" \
+        "  ↑↓ navigate · Enter resume · ESC back"
+    echo ""
+
+    local choice
+    choice=$(printf '%s\n' "${search_rows[@]}" | \
+        gum choose) || return 1
+
+    local sel_num
+    sel_num=$(echo "$choice" | awk '{print $1}')
+    local sel_idx=$((sel_num - 1))
+
+    if [ "$sel_idx" -lt 0 ] || [ "$sel_idx" -ge "${#SEARCH_SIDS[@]}" ]; then
+        return 1
+    fi
+
+    local sid="${SEARCH_SIDS[$sel_idx]}"
+    local line
+    line=$(grep "^${sid}	" "$SESSION_LOG")
+    SELECTED_SID=$(echo "$line" | cut -f1)
+    SELECTED_CWD=$(echo "$line" | cut -f2)
+    SELECTED_BETREFF=$(echo "$line" | cut -f3)
+    resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF"
 }
 
 ###############################################################################
 # Statistics
 ###############################################################################
 show_stats() {
- if [ ! -s "$SESSION_LOG" ]; then
- gum style --foreground="$C_WARN" "$(t stats_none)"
- sleep 1
- return
- fi
+    if [ ! -s "$SESSION_LOG" ]; then
+        gum style --foreground="$C_WARN" "$(t stats_none)"
+        sleep 1
+        return
+    fi
 
- clear
- local total oldest newest
- total=$(wc -l < "$SESSION_LOG")
- oldest=$(head -1 "$SESSION_LOG" | cut -f4)
- newest=$(tail -1 "$SESSION_LOG" | cut -f4)
+    clear
+    local total oldest newest
+    total=$(wc -l < "$SESSION_LOG")
+    oldest=$(head -1 "$SESSION_LOG" | cut -f4)
+    newest=$(tail -1 "$SESSION_LOG" | cut -f4)
 
- # Token totals
- local total_in=0 total_out=0
- while IFS=$'\t' read -r _ _ _ _ _ tk; do
- if [ -n "$tk" ] && [ "$tk" != "0/0" ]; then
- local t_in t_out
- t_in=$(echo "$tk" | cut -d/ -f1)
- t_out=$(echo "$tk" | cut -d/ -f2)
- total_in=$((total_in + t_in))
- total_out=$((total_out + t_out))
- fi
- done < "$SESSION_LOG"
+    # Token totals
+    local total_in=0 total_out=0
+    while IFS=$'\t' read -r _ _ _ _ _ tk; do
+        if [ -n "$tk" ] && [ "$tk" != "0/0" ]; then
+            local t_in t_out
+            t_in=$(echo "$tk" | cut -d/ -f1)
+            t_out=$(echo "$tk" | cut -d/ -f2)
+            total_in=$((total_in + t_in))
+            total_out=$((total_out + t_out))
+        fi
+    done < "$SESSION_LOG"
 
- gum style \
- --foreground="$C_PRIMARY" \
- --border="rounded" \
- --border-foreground="$C_SECONDARY" \
- --padding="1 3" \
- --margin="1 2" \
- --bold \
- "$(t stats_title)"
+    local fmt_total_in fmt_total_out
+    fmt_total_in=$(format_tokens "$total_in")
+    fmt_total_out=$(format_tokens "$total_out")
 
- gum style --margin="0 4" \
- "Version: ${CCSM_VERSION}" \
- "Sessions: ${total}" \
- "Oldest: ${oldest}" \
- "Newest: ${newest}" \
- "Cleanup: ${CLEANUP_DAYS} days" \
- "" \
- "Tokens in: ${total_in}" \
- "Tokens out: ${total_out}"
+    # Top directories
+    local top_dirs
+    top_dirs=$(cut -f2 "$SESSION_LOG" | sed "s|$HOME|~|g" | sort | uniq -c | sort -rn | head -5 | \
+        awk '{printf "  %dx %s\n", $1, $2}')
 
- # Top directories
- echo ""
- gum style --foreground="$C_DIM" --margin="0 4" "Top directories:"
- cut -f2 "$SESSION_LOG" | sed "s|$HOME|~|g" | sort | uniq -c | sort -rn | head -5 | \
- awk '{printf " %dx %s\n", $1, $2}'
+    # Top tags
+    local top_tags
+    top_tags=$(cut -f5 "$SESSION_LOG" 2>/dev/null | grep -v '^$' | grep -v '^-$' | tr ' ' '\n' | sort | uniq -c | sort -rn | head -5)
 
- # Top tags
- local top_tags
- top_tags=$(cut -f5 "$SESSION_LOG" 2>/dev/null | grep -v '^$' | grep -v '^-$' | tr ' ' '\n' | sort | uniq -c | sort -rn | head -5)
- if [ -n "$top_tags" ]; then
- echo ""
- gum style --foreground="$C_DIM" --margin="0 4" "Top tags:"
- echo "$top_tags" | awk '{printf " %s (%dx)\n", $2, $1}'
- fi
+    # Build session table
+    local table_output
+    table_output=$(build_table_rows 0)
 
- # Full session table
- echo ""
- gum style --foreground="$C_DIM" --margin="0 4" "All sessions:"
- show_session_table
+    # Build box content
+    local box_lines=()
+    box_lines+=("  $(t stats_title)")
+    box_lines+=("")
+    box_lines+=("  Version:      ${CCSM_VERSION}")
+    box_lines+=("  Sessions:     ${total}")
+    box_lines+=("  Oldest:       ${oldest}")
+    box_lines+=("  Newest:       ${newest}")
+    box_lines+=("  Cleanup:      ${CLEANUP_DAYS} days")
+    box_lines+=("  Tokens in:    ${fmt_total_in}")
+    box_lines+=("  Tokens out:   ${fmt_total_out}")
+    box_lines+=("")
+    box_lines+=("  $(table_separator)")
+    box_lines+=("")
+    box_lines+=("  Top directories:")
+    if [ -n "$top_dirs" ]; then
+        while IFS= read -r dline; do
+            box_lines+=("  $dline")
+        done <<< "$top_dirs"
+    fi
 
- echo ""
- gum confirm "OK" --affirmative="Back" --negative="" 2>/dev/null || true
+    if [ -n "$top_tags" ]; then
+        box_lines+=("")
+        box_lines+=("  $(table_separator)")
+        box_lines+=("")
+        box_lines+=("  Top tags:")
+        while IFS= read -r tline; do
+            local formatted
+            formatted=$(echo "$tline" | awk '{printf "  %s (%dx)\n", $2, $1}')
+            box_lines+=("  $formatted")
+        done <<< "$top_tags"
+    fi
+
+    box_lines+=("")
+    box_lines+=("  $(table_separator)")
+    box_lines+=("")
+    box_lines+=("  All sessions:")
+    box_lines+=("")
+    box_lines+=("  $(table_header)")
+    box_lines+=("  $(table_separator)")
+    while IFS= read -r row; do
+        [ -n "$row" ] && box_lines+=("  $row")
+    done <<< "$table_output"
+
+    render_box "" "${box_lines[@]}"
+    echo ""
+    gum style --foreground="$C_DIM" --margin="0 2" \
+        "  Enter back"
+    echo ""
+    gum confirm "OK" --affirmative="Back" --negative="" 2>/dev/null || true
 }
 
 ###############################################################################
 # Subject suggestions from transcript
 ###############################################################################
 generate_suggestions() {
- local transcript="$1" cwd="$2"
- python3 - "$transcript" "$cwd" "$CCSM_LANG" <<'PYEOF'
+    local transcript="$1" cwd="$2"
+    python3 - "$transcript" "$cwd" "$CCSM_LANG" <<'PYEOF'
 import json, sys, os
 
 transcript_path = sys.argv[1]
@@ -594,43 +787,43 @@ suggestions = []
 user_messages = []
 
 try:
- with open(transcript_path) as f:
- for line in f:
- try:
- obj = json.loads(line)
- if obj.get('type') == 'user' and 'message' in obj:
- msg = obj['message']
- if isinstance(msg, dict) and msg.get('role') == 'user':
- for c in msg.get('content', []):
- if isinstance(c, dict) and c.get('type') == 'text':
- text = c['text'].strip().replace('\n', ' ').replace('\t', ' ')
- if len(text) > 5:
- user_messages.append(text)
- except (json.JSONDecodeError, KeyError):
- pass
+    with open(transcript_path) as f:
+        for line in f:
+            try:
+                obj = json.loads(line)
+                if obj.get('type') == 'user' and 'message' in obj:
+                    msg = obj['message']
+                    if isinstance(msg, dict) and msg.get('role') == 'user':
+                        for c in msg.get('content', []):
+                            if isinstance(c, dict) and c.get('type') == 'text':
+                                text = c['text'].strip().replace('\n', ' ').replace('\t', ' ')
+                                if len(text) > 5:
+                                    user_messages.append(text)
+            except (json.JSONDecodeError, KeyError):
+                pass
 except Exception:
- pass
+    pass
 
 if user_messages:
- first = user_messages[0][:80]
- if len(user_messages[0]) > 80: first += ".."
- suggestions.append(first)
+    first = user_messages[0][:80]
+    if len(user_messages[0]) > 80: first += ".."
+    suggestions.append(first)
 
 dir_name = os.path.basename(cwd)
 prefix = "Work in" if lang == "en" else "Arbeit in"
 if dir_name and dir_name != os.path.basename(os.path.expanduser('~')):
- suggestions.append(f"{prefix}: {dir_name}")
+    suggestions.append(f"{prefix}: {dir_name}")
 
 if user_messages and dir_name:
- first_short = user_messages[0][:40]
- if len(user_messages[0]) > 40: first_short += ".."
- suggestions.append(f"{dir_name}: {first_short}")
+    first_short = user_messages[0][:40]
+    if len(user_messages[0]) > 40: first_short += ".."
+    suggestions.append(f"{dir_name}: {first_short}")
 
 seen = set()
 for s in suggestions:
- if s not in seen:
- seen.add(s)
- print(s)
+    if s not in seen:
+        seen.add(s)
+        print(s)
 PYEOF
 }
 
@@ -638,227 +831,237 @@ PYEOF
 # Save session (guided gum flow)
 ###############################################################################
 save_session() {
- local tmpfile=""
- tmpfile=$(ls -t "$TMPDIR"/session-*.json 2>/dev/null | head -1)
- [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ] && [ -f "/tmp/claude-session-end.json" ] && tmpfile="/tmp/claude-session-end.json"
+    local tmpfile=""
+    tmpfile=$(ls -t "$TMPDIR"/session-*.json 2>/dev/null | head -1)
+    [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ] && [ -f "/tmp/claude-session-end.json" ] && tmpfile="/tmp/claude-session-end.json"
 
- if [ -z "$tmpfile" ]; then
- local waited=0
- while [ $waited -lt 10 ]; do
- sleep 0.5
- waited=$((waited + 1))
- tmpfile=$(ls -t "$TMPDIR"/session-*.json 2>/dev/null | head -1)
- [ -n "$tmpfile" ] && break
- done
- fi
+    if [ -z "$tmpfile" ]; then
+        local waited=0
+        while [ $waited -lt 10 ]; do
+            sleep 0.5
+            waited=$((waited + 1))
+            tmpfile=$(ls -t "$TMPDIR"/session-*.json 2>/dev/null | head -1)
+            [ -n "$tmpfile" ] && break
+        done
+    fi
 
- if [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ]; then
- gum style --foreground="$C_WARN" "$(t save_no_data)"
- sleep 2
- return
- fi
+    if [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ]; then
+        gum style --foreground="$C_WARN" "$(t save_no_data)"
+        sleep 2
+        return
+    fi
 
- local sid cwd betreff transcript tokens
- sid=$(jq -r '.session_id' "$tmpfile" 2>/dev/null)
- cwd=$(jq -r '.cwd' "$tmpfile" 2>/dev/null)
- betreff=$(jq -r '.betreff' "$tmpfile" 2>/dev/null)
- transcript=$(jq -r '.transcript // empty' "$tmpfile" 2>/dev/null)
- tokens=$(jq -r '.tokens // "0/0"' "$tmpfile" 2>/dev/null)
- [ -z "$sid" ] && return
+    local sid cwd betreff transcript tokens
+    sid=$(jq -r '.session_id' "$tmpfile" 2>/dev/null)
+    cwd=$(jq -r '.cwd' "$tmpfile" 2>/dev/null)
+    betreff=$(jq -r '.betreff' "$tmpfile" 2>/dev/null)
+    transcript=$(jq -r '.transcript // empty' "$tmpfile" 2>/dev/null)
+    tokens=$(jq -r '.tokens // "0/0"' "$tmpfile" 2>/dev/null)
+    [ -z "$sid" ] && return
 
- local datum
- datum=$(date '+%Y-%m-%d')
- local existing_line
- existing_line=$(grep "^${sid}	" "$SESSION_LOG" 2>/dev/null)
+    local datum
+    datum=$(date '+%Y-%m-%d')
+    local existing_line
+    existing_line=$(grep "^${sid}	" "$SESSION_LOG" 2>/dev/null)
 
- echo ""
- gum style \
- --foreground="$C_PRIMARY" \
- --border="rounded" \
- --border-foreground="$C_SECONDARY" \
- --padding="0 2" \
- "$(t save_title)" \
- "Dir: ${cwd}" \
- "Tokens: ${tokens} (in/out)"
+    # Parse tokens for display
+    local disp_in="0" disp_out="0"
+    if [ -n "$tokens" ] && [ "$tokens" != "0/0" ]; then
+        disp_in=$(echo "$tokens" | cut -d/ -f1)
+        disp_out=$(echo "$tokens" | cut -d/ -f2)
+    fi
+    local fmt_in fmt_out
+    fmt_in=$(format_tokens "$disp_in")
+    fmt_out=$(format_tokens "$disp_out")
 
- if [ -n "$existing_line" ]; then
- # Existing session
- local existing_betreff existing_tags existing_tokens
- existing_betreff=$(echo "$existing_line" | cut -f3)
- existing_tags=$(echo "$existing_line" | cut -f5)
- existing_tokens=$(echo "$existing_line" | cut -f6)
+    echo ""
+    local save_lines=()
+    save_lines+=("  $(t save_title)")
+    save_lines+=("")
+    save_lines+=("  Dir:        ${cwd}")
+    save_lines+=("  Tokens in:  ${fmt_in}")
+    save_lines+=("  Tokens out: ${fmt_out}")
+    render_box "" "${save_lines[@]}"
+    echo ""
 
- local action
- action=$(printf '%s\n' "$(t save_keep): $existing_betreff" "$(t save_change)" | \
- gum choose) || { rm -f "$tmpfile"; return; }
+    if [ -n "$existing_line" ]; then
+        # Existing session
+        local existing_betreff existing_tags existing_tokens
+        existing_betreff=$(echo "$existing_line" | cut -f3)
+        existing_tags=$(echo "$existing_line" | cut -f5)
+        existing_tokens=$(echo "$existing_line" | cut -f6)
 
- local new_betreff="$existing_betreff"
- if [[ "$action" == "$(t save_change)" ]]; then
- new_betreff=$(gum input \
- --value="$existing_betreff" \
- --placeholder="$(t save_enter)") || new_betreff="$existing_betreff"
- fi
+        local action
+        action=$(printf '%s\n' "$(t save_keep): $existing_betreff" "$(t save_change)" | \
+            gum choose) || { rm -f "$tmpfile"; return; }
 
- # Accumulate tokens
- local new_tokens="$tokens"
- if [ -n "$existing_tokens" ] && [ "$existing_tokens" != "0/0" ] && [ -n "$tokens" ] && [ "$tokens" != "0/0" ]; then
- local old_in old_out cur_in cur_out
- old_in=$(echo "$existing_tokens" | cut -d/ -f1)
- old_out=$(echo "$existing_tokens" | cut -d/ -f2)
- cur_in=$(echo "$tokens" | cut -d/ -f1)
- cur_out=$(echo "$tokens" | cut -d/ -f2)
- new_tokens="$(( old_in + cur_in ))/$(( old_out + cur_out ))"
- fi
+        local new_betreff="$existing_betreff"
+        if [[ "$action" == "$(t save_change)" ]]; then
+            new_betreff=$(gum input \
+                --value="$existing_betreff" \
+                --placeholder="$(t save_enter)") || new_betreff="$existing_betreff"
+        fi
 
- local tmplog="${SESSION_LOG}.tmp"
- while IFS=$'\t' read -r s c b d t_col tk; do
- if [ "$s" = "$sid" ]; then
- printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$new_betreff" "$datum" "$t_col" "$new_tokens"
- else
- printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
- fi
- done < "$SESSION_LOG" > "$tmplog"
- mv "$tmplog" "$SESSION_LOG"
- gum style --foreground="$C_ACCENT" "✓ $(t save_updated): $new_betreff"
- else
- # New session — guided flow
+        # Accumulate tokens
+        local new_tokens="$tokens"
+        if [ -n "$existing_tokens" ] && [ "$existing_tokens" != "0/0" ] && [ -n "$tokens" ] && [ "$tokens" != "0/0" ]; then
+            local old_in old_out cur_in cur_out
+            old_in=$(echo "$existing_tokens" | cut -d/ -f1)
+            old_out=$(echo "$existing_tokens" | cut -d/ -f2)
+            cur_in=$(echo "$tokens" | cut -d/ -f1)
+            cur_out=$(echo "$tokens" | cut -d/ -f2)
+            new_tokens="$(( old_in + cur_in ))/$(( old_out + cur_out ))"
+        fi
 
- # Step 1: Save?
- if ! gum confirm "$(t save_want)"; then
- gum style --foreground="$C_DIM" "$(t save_not_saved)"
- rm -f "$tmpfile"
- sleep 1
- return
- fi
+        local tmplog="${SESSION_LOG}.tmp"
+        while IFS=$'\t' read -r s c b d t_col tk; do
+            if [ "$s" = "$sid" ]; then
+                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$new_betreff" "$datum" "$t_col" "$new_tokens"
+            else
+                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+            fi
+        done < "$SESSION_LOG" > "$tmplog"
+        mv "$tmplog" "$SESSION_LOG"
+        gum style --foreground="$C_ACCENT" "  $(t save_updated): $new_betreff"
+    else
+        # New session — guided flow
 
- # Step 2: Auto-subject
- local auto_betreff=""
- if [ -n "$transcript" ] && [ -f "$transcript" ]; then
- auto_betreff=$(generate_suggestions "$transcript" "$cwd" | head -1)
- fi
- [ -z "$auto_betreff" ] && auto_betreff="Session $(basename "$cwd") $datum"
+        # Step 1: Save?
+        if ! gum confirm "$(t save_want)"; then
+            gum style --foreground="$C_DIM" "$(t save_not_saved)"
+            rm -f "$tmpfile"
+            sleep 1
+            return
+        fi
 
- local chosen_betreff=""
- if gum confirm "$(t save_accept)
+        # Step 2: Auto-subject
+        local auto_betreff=""
+        if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+            auto_betreff=$(generate_suggestions "$transcript" "$cwd" | head -1)
+        fi
+        [ -z "$auto_betreff" ] && auto_betreff="Session $(basename "$cwd") $datum"
+
+        local chosen_betreff=""
+        if gum confirm "$(t save_accept)
 $auto_betreff"; then
- chosen_betreff="$auto_betreff"
- else
- # Step 3: Custom subject
- while true; do
- chosen_betreff=$(gum input \
- --value="$auto_betreff" \
- --placeholder="$(t save_enter)") || { rm -f "$tmpfile"; return; }
+            chosen_betreff="$auto_betreff"
+        else
+            # Step 3: Custom subject
+            while true; do
+                chosen_betreff=$(gum input \
+                    --value="$auto_betreff" \
+                    --placeholder="$(t save_enter)") || { rm -f "$tmpfile"; return; }
 
- [ -n "$chosen_betreff" ] && break
+                [ -n "$chosen_betreff" ] && break
 
- if ! gum confirm "$(t save_no_empty)"; then
- rm -f "$tmpfile"
- return
- fi
- done
- fi
+                if ! gum confirm "$(t save_no_empty)"; then
+                    rm -f "$tmpfile"
+                    return
+                fi
+            done
+        fi
 
- # Step 4: Tags
- local chosen_tags="-"
- local tag_input
- tag_input=$(gum input \
- --placeholder="$(t save_tags)" \
- ) || true
- [ -n "$tag_input" ] && chosen_tags=$(echo "$tag_input" | tr '\t' ' ')
+        # Step 4: Tags
+        local chosen_tags="-"
+        local tag_input
+        tag_input=$(gum input \
+            --placeholder="$(t save_tags)" \
+            ) || true
+        [ -n "$tag_input" ] && chosen_tags=$(echo "$tag_input" | tr '\t' ' ')
 
- # Save
- chosen_betreff=$(echo "$chosen_betreff" | tr '\t' ' ')
- printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$chosen_tags" "$tokens" >> "$SESSION_LOG"
- gum style --foreground="$C_ACCENT" "✓ $(t save_saved): $chosen_betreff"
- fi
+        # Save
+        chosen_betreff=$(echo "$chosen_betreff" | tr '\t' ' ')
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$chosen_tags" "$tokens" >> "$SESSION_LOG"
+        gum style --foreground="$C_ACCENT" "  $(t save_saved): $chosen_betreff"
+    fi
 
- sleep 1
- rm -f "$tmpfile"
+    sleep 1
+    rm -f "$tmpfile"
 }
 
 ###############################################################################
 # Help
 ###############################################################################
 show_help() {
- if [[ "$CCSM_LANG" == "de" ]]; then
- cat <<EOF
+    if [[ "$CCSM_LANG" == "de" ]]; then
+        cat <<EOF
 ccsm v${CCSM_VERSION} — Claude Code Session Manager
 
 Nutzung:
- ccsm Interaktives Menü
- ccsm --search <text> Sessions durchsuchen
- ccsm --stats Statistiken anzeigen
- ccsm --cleanup Cleanup manuell starten
- ccsm --version Version anzeigen
- ccsm --help Diese Hilfe
+  ccsm                  Interaktives Menü
+  ccsm --search <text>  Sessions durchsuchen
+  ccsm --stats          Statistiken anzeigen
+  ccsm --cleanup        Cleanup manuell starten
+  ccsm --version        Version anzeigen
+  ccsm --help           Diese Hilfe
 
 Konfiguration: ~/.claude/ccsm.conf
- CLEANUP_DAYS=30 Tage bis Session als alt gilt
- MAX_SESSIONS=0 Max. Sessions (0=unbegrenzt)
- CCSM_LANG=de Sprache (en, de)
+  CLEANUP_DAYS=30       Tage bis Session als alt gilt
+  MAX_SESSIONS=0        Max. Sessions (0=unbegrenzt)
+  CCSM_LANG=de          Sprache (en, de)
 EOF
- else
- cat <<EOF
+    else
+        cat <<EOF
 ccsm v${CCSM_VERSION} — Claude Code Session Manager
 
 Usage:
- ccsm Interactive menu
- ccsm --search <text> Search sessions
- ccsm --stats Show statistics
- ccsm --cleanup Manual cleanup
- ccsm --version Show version
- ccsm --help Show this help
+  ccsm                  Interactive menu
+  ccsm --search <text>  Search sessions
+  ccsm --stats          Show statistics
+  ccsm --cleanup        Manual cleanup
+  ccsm --version        Show version
+  ccsm --help           Show this help
 
 Configuration: ~/.claude/ccsm.conf
- CLEANUP_DAYS=30 Days until session is considered old
- MAX_SESSIONS=0 Max sessions (0=unlimited)
- CCSM_LANG=en Language (en, de)
+  CLEANUP_DAYS=30       Days until session is considered old
+  MAX_SESSIONS=0        Max sessions (0=unlimited)
+  CCSM_LANG=en          Language (en, de)
 EOF
- fi
+    fi
 }
 
 ###############################################################################
 # Main
 ###############################################################################
 main() {
- case "${1:-}" in
- --search) shift; search_sessions "$*"; return ;;
- --stats) show_stats; return ;;
- --cleanup) check_cleanup; return ;;
- --version|-v) echo "ccsm v${CCSM_VERSION}"; return ;;
- --help|-h) show_help; return ;;
- esac
+    case "${1:-}" in
+        --search) shift; search_sessions "$*"; return ;;
+        --stats) show_stats; return ;;
+        --cleanup) check_cleanup; return ;;
+        --version|-v) echo "ccsm v${CCSM_VERSION}"; return ;;
+        --help|-h) show_help; return ;;
+    esac
 
- check_cleanup
+    check_cleanup
 
- while true; do
- show_main_menu
+    while true; do
+        show_main_menu
 
- case "$MENU_CHOICE" in
- *"$(t menu_new)"*)
- clear
- echo "$(t msg_starting)"
- echo ""
- claude "$@"
- save_session
- ;;
- *"$(t menu_resume)"*)
- if quick_resume; then
- resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF" "$@"
- fi
- ;;
- *"$(t menu_delete)"*)
- delete_session
- ;;
- *"$(t menu_stats)"*)
- show_stats
- ;;
- *"$(t menu_quit)"*)
- clear
- exit 0
- ;;
- esac
- done
+        case "$MENU_CHOICE" in
+            *"$(t menu_new)"*)
+                clear
+                echo "$(t msg_starting)"
+                echo ""
+                claude "$@"
+                save_session
+                ;;
+            *"$(t menu_resume)"*)
+                if quick_resume; then
+                    resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF" "$@"
+                fi
+                ;;
+            *"$(t menu_delete)"*)
+                delete_session
+                ;;
+            *"$(t menu_stats)"*)
+                show_stats
+                ;;
+            *"$(t menu_quit)"*)
+                clear
+                exit 0
+                ;;
+        esac
+    done
 }
 
 [[ "${CCSM_TESTING:-}" == "true" ]] || main "$@"
