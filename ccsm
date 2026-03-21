@@ -133,12 +133,20 @@ is_yes() {
     [[ "${input,,}" == "${yes_char,,}" ]]
 }
 
-# Theme colors
+# Theme colors (hex for gum)
 C_PRIMARY="#7C3AED"   # Violet
 C_SECONDARY="#0D9488" # Teal
 C_ACCENT="#22C55E"    # Green
 C_WARN="#F59E0B"      # Amber
 C_DIM="#6B7280"       # Gray
+
+# ANSI codes for inline text coloring
+A_VIOLET='\033[38;5;99m'
+A_TEAL='\033[38;5;36m'
+A_GREEN='\033[38;5;35m'
+A_DIM='\033[2m'
+A_BOLD='\033[1m'
+A_RST='\033[0m'
 
 ###############################################################################
 # Check dependencies (skipped in test mode)
@@ -265,9 +273,15 @@ table_bottom() {
 }
 
 table_header_row() {
-    printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│%*s│%*s│' \
-        $_W_NUM " #" $_W_DATE " Date" $_W_SUBJ " Subject" $_W_DIR " Directory" \
-        $_W_TI "Total In " $_W_TO "Total Out" $_W_LI " Last In " $_W_LO "Last Out "
+    printf '│%b%-*s%b│%b%-*s%b│%b%-*s%b│%b%-*s%b│%b%*s%b│%b%*s%b│%b%*s%b│%b%*s%b│' \
+        "$A_VIOLET" $_W_NUM " #" "$A_RST" \
+        "$A_VIOLET" $_W_DATE " Date" "$A_RST" \
+        "$A_VIOLET" $_W_SUBJ " Subject" "$A_RST" \
+        "$A_VIOLET" $_W_DIR " Directory" "$A_RST" \
+        "$A_VIOLET" $_W_TI "Total In " "$A_RST" \
+        "$A_VIOLET" $_W_TO "Total Out" "$A_RST" \
+        "$A_VIOLET" $_W_LI " Last In " "$A_RST" \
+        "$A_VIOLET" $_W_LO "Last Out " "$A_RST"
 }
 
 table_data_row() {
@@ -350,9 +364,13 @@ build_table_compact() {
     _hl() { local s=""; for ((i=0; i<$1; i++)); do s+="─"; done; echo -n "$s"; }
 
     lines+=("$(printf '┌%s┬%s┬%s┬%s┬%s┬%s┐' "$(_hl $cw_num)" "$(_hl $cw_date)" "$(_hl $cw_subj)" "$(_hl $cw_dir)" "$(_hl $cw_ti)" "$(_hl $cw_to)")")
-    lines+=("$(printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│' \
-        $cw_num " #" $cw_date " Date" $cw_subj " Subject" $cw_dir " Directory" \
-        $cw_ti "Total In " $cw_to "Total Out")")
+    lines+=("$(printf '│%b%-*s%b│%b%-*s%b│%b%-*s%b│%b%-*s%b│%b%*s%b│%b%*s%b│' \
+        "$A_VIOLET" $cw_num " #" "$A_RST" \
+        "$A_VIOLET" $cw_date " Date" "$A_RST" \
+        "$A_VIOLET" $cw_subj " Subject" "$A_RST" \
+        "$A_VIOLET" $cw_dir " Directory" "$A_RST" \
+        "$A_VIOLET" $cw_ti "Total In " "$A_RST" \
+        "$A_VIOLET" $cw_to "Total Out" "$A_RST")")
     lines+=("$(printf '├%s┼%s┼%s┼%s┼%s┼%s┤' "$(_hl $cw_num)" "$(_hl $cw_date)" "$(_hl $cw_subj)" "$(_hl $cw_dir)" "$(_hl $cw_ti)" "$(_hl $cw_to)")")
 
     while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
@@ -530,7 +548,7 @@ show_main_menu() {
 
     # Recent sessions
     if [ -s "$SESSION_LOG" ]; then
-        box_lines+=("  $(t menu_recent)")
+        box_lines+=("  ${A_TEAL}${A_BOLD}$(t menu_recent)${A_RST}")
         box_lines+=("")
         build_table_compact 5
         for line in "${COMPACT_TABLE_LINES[@]}"; do
@@ -540,13 +558,13 @@ show_main_menu() {
     fi
 
     box_lines+=("$dline")
-    box_lines+=("  $(t menu_action)")
+    box_lines+=("  ${A_TEAL}${A_BOLD}$(t menu_action)${A_RST}")
     box_lines+=("")
-    box_lines+=("  [n] $(t menu_new)")
-    box_lines+=("  [s] $(t menu_resume)")
-    box_lines+=("  [d] $(t menu_delete)")
-    box_lines+=("  [i] $(t menu_stats)")
-    box_lines+=("  [q] $(t menu_quit)")
+    box_lines+=("  ${A_GREEN}[n]${A_RST} $(t menu_new)")
+    box_lines+=("  ${A_GREEN}[s]${A_RST} $(t menu_resume)")
+    box_lines+=("  ${A_GREEN}[d]${A_RST} $(t menu_delete)")
+    box_lines+=("  ${A_GREEN}[i]${A_RST} $(t menu_stats)")
+    box_lines+=("  ${A_GREEN}[q]${A_RST} $(t menu_quit)")
 
     render_box "" "${box_lines[@]}"
     echo ""
