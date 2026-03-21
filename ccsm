@@ -455,6 +455,14 @@ show_main_menu() {
     box_lines+=("  ║   ║   ╚═╗ ║║║")
     box_lines+=("  ╚═╝ ╚═╝ ╚═╝ ╩ ╩")
     box_lines+=("")
+    # Doppelte Trennlinie
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 80)
+    local inner=$((cols < 60 ? 56 : cols - 8))
+    local dline=""
+    for ((i=0; i<inner; i++)); do dline+="═"; done
+    box_lines+=("$dline")
+    box_lines+=("")
     box_lines+=("  [1] $(t menu_new)")
     box_lines+=("  [2] $(t menu_resume)")
     box_lines+=("  [3] $(t menu_delete)")
