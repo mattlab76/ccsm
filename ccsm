@@ -408,28 +408,46 @@ show_menu() {
         echo -e "${BOLD}$(menu_item "${CYAN}$(t menu_recent)  ${DIM}($(t menu_direct_hint))${RESET}${BOLD}")${RESET}"
         echo -e "${BOLD}${EMPTY_LINE}${RESET}"
 
-        local max_betreff=$((INNER - 12))
+        # Calculate column widths based on available space
+        # Available: INNER - 6 (padding) - 4 (key) - 12 (date) - 4 (spacing) = rest for subject+dir+tags+tokens
+        local avail=$((INNER - 26))
+        local w_subj=$((avail * 35 / 100))  # 35%
+        local w_dir=$((avail * 25 / 100))    # 25%
+        local w_tags=$((avail * 20 / 100))   # 20%
+        local w_tok=$((avail * 20 / 100))    # 20%
+        [ "$w_subj" -lt 15 ] && w_subj=15
+        [ "$w_dir" -lt 10 ] && w_dir=10
+        [ "$w_tags" -lt 6 ] && w_tags=6
+        [ "$w_tok" -lt 8 ] && w_tok=8
+
+        # Table header
+        local hdr
+        printf -v hdr "${DIM}%-4s %-12s %-${w_subj}s %-${w_dir}s %-${w_tags}s %s${RESET}" \
+            "" "$(t sessions_col_date)" "$(t sessions_col_subject)" "$(t sessions_col_dir)" "$(t sessions_col_tags)" "$(t tokens_label)"
+        echo -e "${BOLD}$(menu_item "$hdr")${RESET}"
+
         local keys=(a b c d e)
         local i=0
         while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
             local key="${keys[$i]}"
             local short_cwd="${cwd/#$HOME/\~}"
-            local short_betreff="${betreff:0:$max_betreff}"
-            [ ${#betreff} -gt "$max_betreff" ] && short_betreff="${short_betreff}.."
+            local short_betreff="${betreff:0:$((w_subj - 2))}"
+            [ ${#betreff} -gt $((w_subj - 2)) ] && short_betreff="${short_betreff}.."
+            local short_cwd_disp="${short_cwd:0:$((w_dir - 2))}"
+            [ ${#short_cwd} -gt $((w_dir - 2)) ] && short_cwd_disp="..${short_cwd: -$((w_dir - 4))}"
+            local tag_str="${tags:--}"
+            [ "$tag_str" = "-" ] && tag_str=""
+            local tok_str=""
+            [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ] && tok_str="$tokens_col"
 
             QUICK_SID[$key]="$sid"
             QUICK_CWD[$key]="$cwd"
             QUICK_BETREFF[$key]="$betreff"
 
-            # Line 1: key + subject
-            local line1="${GREEN}${key})${RESET}${BOLD}  ${short_betreff}"
-            echo -e "${BOLD}$(menu_item "$line1")${RESET}"
-
-            # Line 2: metadata (date, dir, tags, tokens)
-            local meta="${DIM}${datum}${RESET}  ${CYAN}${short_cwd}${RESET}"
-            [ -n "$tags" ] && [ "$tags" != "-" ] && meta="${meta}  ${MAGENTA}${tags}${RESET}"
-            [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ] && meta="${meta}  ${DIM}${tokens_col} tok${RESET}"
-            echo -e "${BOLD}$(menu_item "    ${meta}")${RESET}"
+            local row
+            printf -v row "${GREEN}%-4s${RESET} ${YELLOW}%-12s${RESET} %-${w_subj}s ${CYAN}%-${w_dir}s${RESET} ${MAGENTA}%-${w_tags}s${RESET} ${DIM}%s${RESET}" \
+                "${key})" "$datum" "$short_betreff" "$short_cwd_disp" "$tag_str" "$tok_str"
+            echo -e "${BOLD}$(menu_item "$row")${RESET}"
 
             i=$((i + 1))
         done < <(tac "$SESSION_LOG" | head -5)
