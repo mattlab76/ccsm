@@ -173,6 +173,11 @@ export GUM_INPUT_TEXT_FOREGROUND="#E5E7EB"
 [ -f "$SESSION_LOG" ] || touch "$SESSION_LOG"
 mkdir -p "$TMPDIR"
 
+# gum renders its TUI on stderr. Some terminal setups (p10k, zsh plugins)
+# suppress stderr display. We redirect stderr to /dev/tty so the TUI is
+# always visible, while stdout (the result) stays capturable by $().
+gum() { command gum "$@" 2>/dev/tty; }
+
 ###############################################################################
 # Helper: days since date
 ###############################################################################
