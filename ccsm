@@ -356,7 +356,7 @@ show_main_menu() {
 
  MENU_CHOICE=$(printf '%s\n' "${choices[@]}" | \
  gum choose \
- --header="" \
+ --header="↑↓ navigate · Enter select · ESC quit" \
  --height=7) || MENU_CHOICE="$(t menu_quit)"
 }
 
@@ -373,7 +373,7 @@ quick_resume() {
  local choice
  choice=$(build_choices | \
  gum choose \
- --header="$(t menu_resume)" \
+ --header="$(t menu_resume)  [↑↓ navigate · Enter select · ESC back]" \
  ) || return 1
 
  local sid
@@ -420,27 +420,38 @@ delete_session() {
  return
  fi
 
- local choice
- choice=$(build_choices | \
- gum choose \
- --header="$(t delete_title)" \
+ local choices
+ choices=$(build_choices | \
+ gum choose --no-limit \
+ --header="$(t delete_title)  [Space=select, Enter=confirm, ESC=cancel]" \
  ) || return
 
- local sid
- sid=$(extract_sid "$choice")
- [ -z "$sid" ] && return
+ [ -z "$choices" ] && return
 
- local betreff
- betreff=$(grep "^${sid}	" "$SESSION_LOG" | cut -f3)
-
- gum confirm "$(t delete_confirm)
-$betreff" || return
-
+ # Count selected
+ local del_count=0
  local tmplog="${SESSION_LOG}.tmp"
- grep -v "^${sid}	" "$SESSION_LOG" > "$tmplog" || true
+ while IFS=$'\t' read -r s c b d t_col tk; do
+ local sid_match=false
+ while IFS= read -r selected; do
+ local sel_sid
+ sel_sid=$(extract_sid "$selected")
+ [ "$s" = "$sel_sid" ] && sid_match=true && break
+ done <<< "$choices"
+ if $sid_match; then
+ del_count=$((del_count + 1))
+ else
+ printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+ fi
+ done < "$SESSION_LOG" > "$tmplog"
  mv "$tmplog" "$SESSION_LOG"
- gum style --foreground="$C_ACCENT" "✓ $(t delete_done)"
+
+ if [ "$del_count" -gt 0 ]; then
+ local msg
+ printf -v msg "$(t cleanup_done)" "$del_count"
+ gum style --foreground="$C_ACCENT" "✓ $msg"
  sleep 1
+ fi
 }
 
 ###############################################################################
@@ -482,7 +493,7 @@ search_sessions() {
  local choice
  choice=$(printf '%s\n' "${results[@]}" | \
  gum choose \
- --header="$(t search_title): '$query' (${#results[@]})" \
+ --header="$(t search_title): '$query' (${#results[@]})  [↑↓ · Enter · ESC]" \
  ) || return 1
 
  local sid
@@ -565,7 +576,7 @@ show_stats() {
  show_session_table
 
  echo ""
- read -rp ""
+ gum confirm "OK" --affirmative="Back" --negative="" 2>/dev/null || true
 }
 
 ###############################################################################
