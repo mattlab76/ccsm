@@ -69,6 +69,7 @@ L_EN[menu_direct_hint]="a-e to quick-start"
 L_EN[menu_sessions_count]="%d saved session(s)"
 L_EN[prompt_choice]="Selection: "
 L_EN[msg_goodbye]="Bye!"
+L_EN[msg_press_enter]="Press Enter to return to menu..."
 L_DE[menu_new]="Neue Session starten"
 L_DE[menu_search]="Alle Sessions anzeigen / suchen"
 L_DE[menu_delete]="Session löschen"
@@ -79,6 +80,7 @@ L_DE[menu_direct_hint]="a-e zum Direktstart"
 L_DE[menu_sessions_count]="%d gespeicherte Session(s)"
 L_DE[prompt_choice]="Auswahl: "
 L_DE[msg_goodbye]="Tschüss!"
+L_DE[msg_press_enter]="Enter drücken für Hauptmenü..."
 
 # Resume / Start
 L_EN[msg_switching]="Switching to"
@@ -1069,29 +1071,35 @@ main() {
     esac
 
     check_cleanup
-    show_menu
 
-    case "$MENU_CHOICE" in
-        a|b|c|d|e)
-            local key="$MENU_CHOICE"
-            if [ -n "${QUICK_SID[$key]}" ]; then
-                resume_session "${QUICK_SID[$key]}" "${QUICK_CWD[$key]}" "${QUICK_BETREFF[$key]}" "$@"
-            else
-                printf "${YELLOW}$(t err_no_session)${RESET}\n" "$key"
-                exit 1
-            fi
-            ;;
-        1)
-            echo -e "\n${GREEN}$(t msg_starting)${RESET}\n"
-            claude "$@"
-            save_session
-            ;;
-        2) if select_session; then resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF" "$@"; fi ;;
-        3) delete_session ;;
-        4) show_stats ;;
-        q|Q|"") echo "$(t msg_goodbye)"; exit 0 ;;
-        *) echo -e "${YELLOW}$(t err_invalid)${RESET}"; exit 1 ;;
-    esac
+    while true; do
+        show_menu
+
+        case "$MENU_CHOICE" in
+            a|b|c|d|e)
+                local key="$MENU_CHOICE"
+                if [ -n "${QUICK_SID[$key]}" ]; then
+                    resume_session "${QUICK_SID[$key]}" "${QUICK_CWD[$key]}" "${QUICK_BETREFF[$key]}" "$@"
+                else
+                    printf "${YELLOW}$(t err_no_session)${RESET}\n" "$key"
+                fi
+                ;;
+            1)
+                echo -e "\n${GREEN}$(t msg_starting)${RESET}\n"
+                claude "$@"
+                save_session
+                ;;
+            2) if select_session; then resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF" "$@"; fi ;;
+            3) delete_session ;;
+            4) show_stats ;;
+            q|Q|"") echo "$(t msg_goodbye)"; exit 0 ;;
+            *) echo -e "${YELLOW}$(t err_invalid)${RESET}" ;;
+        esac
+
+        # Pause before returning to menu
+        echo ""
+        echo -n "$(t msg_press_enter)"; read -r
+    done
 }
 
 [[ "${CCSM_TESTING:-}" == "true" ]] || main "$@"
