@@ -24,7 +24,7 @@ setup() {
 
 @test "cleanup: erkennt alte Sessions" {
     local old_date
-    old_date=$(date -d "60 days ago" '+%Y-%m-%d')
+    old_date=$(_date_ago 60)
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-old" "/tmp" "Alte Session" "$old_date" "-" > "$SESSION_LOG"
 
     output=$(echo "" | bash -c '
@@ -48,7 +48,7 @@ setup() {
 
 @test "cleanup: Löschen entfernt Session aus Log" {
     local old_date
-    old_date=$(date -d "60 days ago" '+%Y-%m-%d')
+    old_date=$(_date_ago 60)
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-old" "/tmp" "Alte Session" "$old_date" "-" > "$SESSION_LOG"
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-new" "/tmp" "New Session" "2026-03-20" "-" >> "$SESSION_LOG"
 
@@ -56,7 +56,7 @@ setup() {
     echo "1" | check_cleanup
 
     local count
-    count=$(wc -l < "$SESSION_LOG")
+    count=$(_count_lines "$SESSION_LOG")
     assert_equal "$count" "1"
     run grep "sid-old" "$SESSION_LOG"
     assert_failure
@@ -66,20 +66,20 @@ setup() {
 
 @test "cleanup: Behalten lässt Session unverändert" {
     local old_date
-    old_date=$(date -d "60 days ago" '+%Y-%m-%d')
+    old_date=$(_date_ago 60)
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-old" "/tmp" "Alte Session" "$old_date" "-" > "$SESSION_LOG"
 
     # Enter = behalten
     echo "" | check_cleanup
 
     local count
-    count=$(wc -l < "$SESSION_LOG")
+    count=$(_count_lines "$SESSION_LOG")
     assert_equal "$count" "1"
 }
 
 @test "cleanup: gemischt alt/neu — nur alte angeboten" {
     local old_date recent_date
-    old_date=$(date -d "60 days ago" '+%Y-%m-%d')
+    old_date=$(_date_ago 60)
     recent_date=$(date '+%Y-%m-%d')
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-old" "/tmp" "Alte" "$old_date" "-" > "$SESSION_LOG"
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-new" "/tmp" "Neue" "$recent_date" "-" >> "$SESSION_LOG"

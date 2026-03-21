@@ -3,6 +3,21 @@
 
 CCSM_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 
+# Cross-platform date helper: _date_ago <days>  →  outputs YYYY-MM-DD
+_date_ago() {
+    local days="$1"
+    if date -d "1 day ago" '+%Y-%m-%d' &>/dev/null; then
+        date -d "$days days ago" '+%Y-%m-%d'
+    else
+        date -v-"${days}"d '+%Y-%m-%d'
+    fi
+}
+
+# Cross-platform wc -l (trims whitespace)
+_count_lines() {
+    wc -l < "$1" | tr -d ' '
+}
+
 _common_setup() {
     # Load bats helpers
     load 'test_helper/bats-support/load'

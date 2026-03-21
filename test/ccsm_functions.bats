@@ -18,7 +18,7 @@ setup() {
 
 @test "days_since: gestriges Datum ergibt 1" {
     local yesterday
-    yesterday=$(date -d "yesterday" '+%Y-%m-%d')
+    yesterday=$(_date_ago 1)
     run days_since "$yesterday"
     assert_success
     assert_output "1"
@@ -26,7 +26,7 @@ setup() {
 
 @test "days_since: Datum vor 30 Tagen ergibt 30" {
     local past
-    past=$(date -d "30 days ago" '+%Y-%m-%d')
+    past=$(_date_ago 30)
     run days_since "$past"
     assert_success
     assert_output "30"

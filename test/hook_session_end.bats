@@ -11,9 +11,9 @@ setup() {
     export TMPDIR="$BATS_TEST_TMPDIR/tmp-ccsm"
     mkdir -p "$TMPDIR"
 
-    # Hook verwendet /tmp/ccsm hart — überschreiben via sed
+    # Hook verwendet CCSM_TMPDIR — überschreiben via sed
     HOOK_PATCHED="$BATS_TEST_TMPDIR/session_end_patched.sh"
-    sed "s|TMPDIR=\"/tmp/ccsm\"|TMPDIR=\"$TMPDIR\"|" "$HOOK_SCRIPT" > "$HOOK_PATCHED"
+    sed "s|CCSM_TMPDIR=\"/tmp/ccsm\"|CCSM_TMPDIR=\"$TMPDIR\"|" "$HOOK_SCRIPT" > "$HOOK_PATCHED"
     chmod +x "$HOOK_PATCHED"
 }
 
@@ -43,7 +43,7 @@ teardown() {
     assert_success
     # Keine Temp-Datei erstellt
     local count
-    count=$(ls "$TMPDIR"/session-*.json 2>/dev/null | wc -l)
+    count=$(ls "$TMPDIR"/session-*.json 2>/dev/null | wc -l | tr -d ' ')
     assert_equal "$count" "0"
 }
 

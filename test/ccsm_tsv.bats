@@ -34,7 +34,7 @@ setup() {
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-3" "/tmp/c" "Dritte" "2026-03-20" "-" >> "$SESSION_LOG"
 
     local count
-    count=$(wc -l < "$SESSION_LOG")
+    count=$(_count_lines "$SESSION_LOG")
     assert_equal "$count" "3"
 }
 
@@ -75,7 +75,7 @@ setup() {
     mv "$tmplog" "$SESSION_LOG"
 
     local count
-    count=$(wc -l < "$SESSION_LOG")
+    count=$(_count_lines "$SESSION_LOG")
     assert_equal "$count" "4"
     run grep "sid-003" "$SESSION_LOG"
     assert_failure  # sid-003 sollte nicht mehr da sein
@@ -90,7 +90,7 @@ setup() {
     mv "$tmplog" "$SESSION_LOG"
 
     local count
-    count=$(wc -l < "$SESSION_LOG")
+    count=$(_count_lines "$SESSION_LOG")
     assert_equal "$count" "0"
 }
 
@@ -155,6 +155,6 @@ setup() {
 @test "TSV: Zähler zeigt korrekte Anzahl" {
     create_test_sessions
     local count
-    count=$(wc -l < "$SESSION_LOG")
+    count=$(_count_lines "$SESSION_LOG")
     assert_equal "$count" "5"
 }
