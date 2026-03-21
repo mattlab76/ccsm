@@ -41,11 +41,11 @@ fi
 declare -A L_EN L_DE
 
 L_EN[title]="Claude Code Session Manager"
-L_EN[menu_new]="🚀 Start new session"
-L_EN[menu_resume]="📂 Browse / search sessions"
-L_EN[menu_delete]="🗑️  Delete session"
-L_EN[menu_stats]="📊 Statistics"
-L_EN[menu_quit]="👋 Quit"
+L_EN[menu_new]="[+] Start new session"
+L_EN[menu_resume]="[>] Browse / search sessions"
+L_EN[menu_delete]="[-] Delete session"
+L_EN[menu_stats]="[#] Statistics"
+L_EN[menu_quit]="[q] Quit"
 L_EN[msg_starting]="Starting new Claude session..."
 L_EN[msg_switching]="Switching to"
 L_EN[msg_resuming]="Resuming session"
@@ -78,11 +78,11 @@ L_EN[stats_none]="No sessions available."
 L_EN[confirm_yes]="y"
 
 L_DE[title]="Claude Code Session Manager"
-L_DE[menu_new]="🚀 Neue Session starten"
-L_DE[menu_resume]="📂 Sessions anzeigen / suchen"
-L_DE[menu_delete]="🗑️  Session löschen"
-L_DE[menu_stats]="📊 Statistiken"
-L_DE[menu_quit]="👋 Beenden"
+L_DE[menu_new]="[+] Neue Session starten"
+L_DE[menu_resume]="[>] Sessions anzeigen / suchen"
+L_DE[menu_delete]="[-] Session löschen"
+L_DE[menu_stats]="[#] Statistiken"
+L_DE[menu_quit]="[q] Beenden"
 L_DE[msg_starting]="Starte neue Claude Session..."
 L_DE[msg_switching]="Wechsle nach"
 L_DE[msg_resuming]="Setze Session fort"
@@ -207,25 +207,34 @@ show_session_table() {
         return 1
     fi
 
-    # Build TSV for gum table
-    local table_data="Date,Subject,Directory,Tags,Tokens (in/out)"
+    # Build formatted table lines
+    local header
+    printf -v header "  %-12s %-35s %-22s %-12s %s" "Date" "Subject" "Directory" "Tags" "Tokens"
+    local lines=()
+    lines+=("$header")
+    lines+=("  $(printf '─%.0s' {1..90})")
+
     local count=0
     while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
         local short_cwd="${cwd/#$HOME/\~}"
-        local short_betreff="${betreff:0:40}"
-        [ ${#betreff} -gt 40 ] && short_betreff="${short_betreff}.."
+        local short_betreff="${betreff:0:33}"
+        [ ${#betreff} -gt 33 ] && short_betreff="${short_betreff}.."
+        local short_cwd_d="${short_cwd:0:20}"
+        [ ${#short_cwd} -gt 20 ] && short_cwd_d="..${short_cwd: -18}"
         local tag_str="${tags:--}"
         [ "$tag_str" = "-" ] && tag_str=""
         local tok_str="${tokens_col:-}"
         [ "$tok_str" = "0/0" ] && tok_str=""
 
-        table_data="${table_data}
-${datum},${short_betreff},${short_cwd},${tag_str},${tok_str}"
+        local row
+        printf -v row "  %-12s %-35s %-22s %-12s %s" "$datum" "$short_betreff" "$short_cwd_d" "$tag_str" "$tok_str"
+        lines+=("$row")
+
         count=$((count + 1))
         [ "$max_items" -gt 0 ] && [ "$count" -ge "$max_items" ] && break
     done < <(tac "$SESSION_LOG")
 
-    echo "$table_data" | gum table --separator=","
+    gum style --foreground="$C_DIM" "${lines[@]}"
 }
 
 ###############################################################################
