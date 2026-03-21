@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests für reine Funktionen: days_since, setup_display, generate_suggestions
+# Tests für reine Funktionen: days_since, calc_columns, format_tokens, _tac, with_lock, generate_suggestions
 
 setup() {
     load 'common_setup'
@@ -48,25 +48,122 @@ setup() {
     fi
 }
 
-# --- setup_display ---
+# --- calc_columns ---
 
-@test "setup_display: setzt HLINE auf korrekte Länge" {
-    export COLUMNS=80
-    setup_display
-    local expected_len=$((INNER))
-    local actual_len=${#HLINE}
-    [ "$actual_len" -eq "$expected_len" ]
+@test "calc_columns: setzt Spaltenbreiten" {
+    calc_columns
+    [ "$_W_NUM" -eq 3 ]
+    [ "$_W_DATE" -eq 12 ]
+    [ "$_W_SUBJ" -ge 18 ]
+    [ "$_W_DIR" -ge 14 ]
 }
 
-@test "setup_display: Mindestbreite 60" {
-    export COLUMNS=30
-    setup_display
-    [ "$WIDTH" -ge 60 ]
+@test "calc_columns: Mindestbreite für Subject" {
+    calc_columns
+    [ "$_W_SUBJ" -ge 18 ]
 }
 
-@test "setup_display: INNER ist WIDTH-2" {
-    setup_display
-    [ "$INNER" -eq $((WIDTH - 2)) ]
+@test "calc_columns: Mindestbreite für Directory" {
+    calc_columns
+    [ "$_W_DIR" -ge 14 ]
+}
+
+# --- format_tokens (pure bash arithmetic, no bc) ---
+
+@test "format_tokens: 0 ergibt '0'" {
+    run format_tokens 0
+    assert_output "0"
+}
+
+@test "format_tokens: leerer Input ergibt '0'" {
+    run format_tokens ""
+    assert_output "0"
+}
+
+@test "format_tokens: kleine Zahl bleibt unverändert" {
+    run format_tokens 500
+    assert_output "500"
+}
+
+@test "format_tokens: Tausender mit k-Suffix" {
+    run format_tokens 47567
+    assert_output "47.5k"
+}
+
+@test "format_tokens: Millionen mit M-Suffix" {
+    run format_tokens 1353202
+    assert_output "1.3M"
+}
+
+@test "format_tokens: exakt 1000 ergibt 1.0k" {
+    run format_tokens 1000
+    assert_output "1.0k"
+}
+
+@test "format_tokens: exakt 1000000 ergibt 1.0M" {
+    run format_tokens 1000000
+    assert_output "1.0M"
+}
+
+# --- _tac (cross-platform reverse) ---
+
+@test "_tac: kehrt Datei um" {
+    local testfile="$BATS_TEST_TMPDIR/tac_test.txt"
+    printf 'line1\nline2\nline3\n' > "$testfile"
+    run _tac "$testfile"
+    assert_success
+    assert_line --index 0 "line3"
+    assert_line --index 1 "line2"
+    assert_line --index 2 "line1"
+}
+
+@test "_tac: leere Datei ergibt leere Ausgabe" {
+    local testfile="$BATS_TEST_TMPDIR/tac_empty.txt"
+    touch "$testfile"
+    run _tac "$testfile"
+    assert_success
+    assert_output ""
+}
+
+@test "_tac: einzeilige Datei bleibt gleich" {
+    local testfile="$BATS_TEST_TMPDIR/tac_single.txt"
+    echo "only line" > "$testfile"
+    run _tac "$testfile"
+    assert_success
+    assert_output "only line"
+}
+
+# --- with_lock (file locking) ---
+
+@test "with_lock: führt Kommando aus" {
+    run with_lock echo "locked"
+    assert_success
+    assert_output "locked"
+}
+
+@test "with_lock: schreibt Datei korrekt" {
+    local outfile="$BATS_TEST_TMPDIR/lock_out.txt"
+    _write_test() { echo "data" > "$outfile"; }
+    with_lock _write_test
+    [ -f "$outfile" ]
+    assert_equal "$(cat "$outfile")" "data"
+}
+
+# --- is_yes (locale-aware confirmation) ---
+
+@test "is_yes: erkennt 'y' als ja (EN)" {
+    run bash -c 'export CCSM_TESTING=true CCSM_LANG=en HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" CCSM_TMPDIR="'"$CCSM_TMPDIR"'"; source "'"$CCSM_ROOT"'/ccsm"; is_yes "y"'
+    assert_success
+}
+
+@test "is_yes: erkennt 'j' als ja (DE)" {
+    run bash -c 'export CCSM_TESTING=true CCSM_LANG=de HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" CCSM_TMPDIR="'"$CCSM_TMPDIR"'"; source "'"$CCSM_ROOT"'/ccsm"; is_yes "j"'
+    assert_success
+}
+
+@test "is_yes: lehnt 'n' ab" {
+    run bash -c 'export CCSM_TESTING=true CCSM_LANG=en HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" CCSM_TMPDIR="'"$CCSM_TMPDIR"'"; source "'"$CCSM_ROOT"'/ccsm"; is_yes "n"'
+    assert_failure
 }
 
 # --- generate_suggestions ---

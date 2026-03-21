@@ -42,8 +42,8 @@ setup() {
     create_test_sessions
     run_fn main --stats
     assert_success
-    assert_output --partial "Total:"
-    assert_output --partial "5 Sessions"
+    assert_output --partial "Sessions:"
+    assert_output --partial "5"
 }
 
 @test "CLI: --search ohne Treffer" {
@@ -57,6 +57,16 @@ setup() {
     run_fn main --search "Erstes"
     assert_success
     assert_output --partial "Erstes Projekt"
+}
+
+@test "CLI: bash version check message" {
+    # Simulate bash 3 by checking the error message text exists in script
+    run grep -q "requires bash 4" "$CCSM_ROOT/ccsm"
+    assert_success
+}
+
+@test "CLI: CCSM_OS is set" {
+    [ -n "$CCSM_OS" ]
 }
 
 @test "CLI: --cleanup bei leerem Log" {

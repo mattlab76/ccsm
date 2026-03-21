@@ -51,5 +51,5 @@ setup() {
     # #infra kommt in sid-001 und sid-004 vor
     run_fn search_sessions "#infra"
     assert_success
-    assert_output --partial "2 match"
+    assert_output --partial "2 result(s)"
 }

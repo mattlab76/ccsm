@@ -8,7 +8,3 @@
 # Days after which a session is considered "old" (0 = disabled)
 # Tage nach denen eine Session als "alt" gilt (0 = deaktiviert)
 CLEANUP_DAYS=30
-
-# Maximum number of sessions to keep (0 = unlimited)
-# Maximale Anzahl Sessions (0 = unbegrenzt)
-MAX_SESSIONS=0

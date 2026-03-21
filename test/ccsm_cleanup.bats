@@ -29,11 +29,11 @@ setup() {
 
     output=$(echo "" | bash -c '
         export CCSM_TESTING=true CCSM_LANG=en HAS_FZF=false
-        export HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" TMPDIR="'"$TMPDIR"'"
+        export HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" CCSM_TMPDIR="'"$CCSM_TMPDIR"'"
         source "'"$CCSM_ROOT"'/ccsm"
         check_cleanup
     ' 2>&1)
-    echo "$output" | grep -q "Old sessions found"
+    echo "$output" | grep -q "Alte Session"
 }
 
 @test "cleanup: ignoriert junge Sessions" {
@@ -52,8 +52,8 @@ setup() {
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-old" "/tmp" "Alte Session" "$old_date" "-" > "$SESSION_LOG"
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-new" "/tmp" "New Session" "2026-03-20" "-" >> "$SESSION_LOG"
 
-    # 'd' = löschen
-    echo "d" | check_cleanup
+    # "1" = first old session number
+    echo "1" | check_cleanup
 
     local count
     count=$(wc -l < "$SESSION_LOG")

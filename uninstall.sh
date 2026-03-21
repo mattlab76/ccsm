@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ccsm Uninstaller
 set -e
 

@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ccsm - Claude Code Session Manager
 # https://github.com/mattlab76/ccsm
 #
-# TUI session manager for Claude Code using gum (fallback: dialog)
+# TUI session manager for Claude Code
 # Save, tag, search, and resume Claude Code sessions
 #
 # Usage:
@@ -12,21 +12,39 @@
 # ccsm --cleanup Manual cleanup
 # ccsm --help Show help
 
+# Require bash 4+ (associative arrays, ${var,,} lowercase)
+if ((BASH_VERSINFO[0] < 4)); then
+    echo "Error: ccsm requires bash 4.0 or later (you have $BASH_VERSION)."
+    echo "macOS: brew install bash  (then ensure /opt/homebrew/bin is in PATH)"
+    exit 1
+fi
+
 CCSM_VERSION="1.5.0"
+CCSM_OS="$(uname -s)"
 
 # Paths
 SESSION_LOG="$HOME/.claude/session_log.tsv"
 CONFIG_FILE="$HOME/.claude/ccsm.conf"
 TOKENS_TOTAL_FILE="$HOME/.claude/ccsm_tokens_total"
-TMPDIR="/tmp/ccsm"
+CCSM_TMPDIR="/tmp/ccsm"
 
 # Defaults
 CLEANUP_DAYS=30
-MAX_SESSIONS=0
 CCSM_LANG="${CCSM_LANG:-}"
 
-# Load config
-[ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
+# Load config (only allow known variables)
+if [ -f "$CONFIG_FILE" ]; then
+    while IFS='=' read -r key val; do
+        key="${key%%#*}"         # strip comments
+        key="${key// /}"         # strip spaces
+        val="${val%%#*}"         # strip inline comments
+        val="${val## }"; val="${val%% }" # trim
+        case "$key" in
+            CLEANUP_DAYS) CLEANUP_DAYS="$val" ;;
+            CCSM_LANG)    CCSM_LANG="$val" ;;
+        esac
+    done < "$CONFIG_FILE"
+fi
 
 # Language detection
 if [[ -z "${CCSM_LANG:-}" ]]; then
@@ -53,10 +71,9 @@ L_EN[msg_starting]="Starting new Claude session..."
 L_EN[new_subject_prompt]="Subject for this session (optional, Enter=skip):"
 L_EN[new_dir_question]="Start in current directory?"
 L_EN[new_dir_current]="Current:"
-L_EN[new_dir_enter]="Enter path:"
+L_EN[new_dir_enter_or_q]="Enter path (q=cancel):"
 L_EN[new_dir_not_found]="Directory not found. Create it?"
 L_EN[new_dir_created]="Directory created."
-L_EN[new_dir_retry]="Try another path"
 L_EN[msg_switching]="Switching to"
 L_EN[msg_resuming]="Resuming session"
 L_EN[err_no_claude]="Error: Claude Code is not installed or not in PATH."
@@ -72,13 +89,13 @@ L_EN[save_saved]="Session saved"
 L_EN[save_updated]="Session updated"
 L_EN[save_not_saved]="Not saved."
 L_EN[save_no_data]="No session data received (hook not triggered?)."
-L_EN[save_keep]="Keep current subject"
-L_EN[save_change]="Enter new subject"
+L_EN[save_current_subject]="Current subject"
 L_EN[delete_title]="Delete Session"
 L_EN[delete_confirm]="Really delete this session?"
 L_EN[delete_done]="Session deleted."
 L_EN[cleanup_title]="Old Sessions (>%d days)"
 L_EN[cleanup_done]="%d session(s) deleted."
+L_EN[cleanup_select_prompt]="Enter numbers to delete (comma-separated, e.g. 1,3) or [q] to skip:"
 L_EN[search_title]="Search Sessions"
 L_EN[search_prompt]="Search term"
 L_EN[search_no_results]="No matches found."
@@ -113,10 +130,9 @@ L_DE[msg_starting]="Starte neue Claude Session..."
 L_DE[new_subject_prompt]="Betreff für diese Session (optional, Enter=überspringen):"
 L_DE[new_dir_question]="Im aktuellen Verzeichnis starten?"
 L_DE[new_dir_current]="Aktuell:"
-L_DE[new_dir_enter]="Pfad eingeben:"
+L_DE[new_dir_enter_or_q]="Pfad eingeben (q=Abbrechen):"
 L_DE[new_dir_not_found]="Verzeichnis nicht gefunden. Anlegen?"
 L_DE[new_dir_created]="Verzeichnis angelegt."
-L_DE[new_dir_retry]="Anderen Pfad eingeben"
 L_DE[msg_switching]="Wechsle nach"
 L_DE[msg_resuming]="Setze Session fort"
 L_DE[err_no_claude]="Fehler: Claude Code ist nicht installiert oder nicht im PATH."
@@ -132,13 +148,13 @@ L_DE[save_saved]="Session gespeichert"
 L_DE[save_updated]="Session aktualisiert"
 L_DE[save_not_saved]="Nicht gespeichert."
 L_DE[save_no_data]="Keine Session-Daten empfangen (Hook nicht ausgelöst?)."
-L_DE[save_keep]="Betreff beibehalten"
-L_DE[save_change]="Neuen Betreff eingeben"
+L_DE[save_current_subject]="Aktueller Betreff"
 L_DE[delete_title]="Session löschen"
 L_DE[delete_confirm]="Diese Session wirklich löschen?"
 L_DE[delete_done]="Session gelöscht."
 L_DE[cleanup_title]="Alte Sessions (>%d Tage)"
 L_DE[cleanup_done]="%d Session(s) gelöscht."
+L_DE[cleanup_select_prompt]="Nummern zum Löschen eingeben (kommagetrennt, z.B. 1,3) oder [q] zum Überspringen:"
 L_DE[search_title]="Sessions suchen"
 L_DE[search_prompt]="Suchbegriff"
 L_DE[search_no_results]="Keine Treffer."
@@ -176,14 +192,7 @@ is_yes() {
     [[ "${input,,}" == "${yes_char,,}" ]]
 }
 
-# Theme colors (hex for gum)
-C_PRIMARY="#7C3AED"   # Violet
-C_SECONDARY="#0D9488" # Teal
-C_ACCENT="#22C55E"    # Green
-C_WARN="#F59E0B"      # Amber
-C_DIM="#6B7280"       # Gray
-
-# ANSI codes for inline text coloring
+# ANSI codes for text coloring
 A_VIOLET='\033[38;5;99m'
 A_TEAL='\033[38;5;36m'
 A_GREEN='\033[38;5;35m'
@@ -200,39 +209,63 @@ if [[ "${CCSM_TESTING:-}" != "true" ]]; then
         echo "$(t err_no_claude)"
         exit 1
     fi
-    if ! command -v gum &>/dev/null; then
-        if ! command -v dialog &>/dev/null; then
-            echo "Error: gum or dialog required. Install: sudo pacman -S gum"
-            exit 1
-        fi
-        # Fallback to dialog version
-        echo "Note: Install 'gum' for a better experience (sudo pacman -S gum)"
-        echo "Falling back to dialog..."
-        sleep 1
-    fi
 fi
 
 export CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=5000
 
-# gum default colors (ensures visibility on any terminal theme)
-export GUM_CHOOSE_CURSOR_FOREGROUND="$C_PRIMARY"
-export GUM_CHOOSE_ITEM_FOREGROUND="#E5E7EB"
-export GUM_CHOOSE_SELECTED_FOREGROUND="$C_SECONDARY"
-export GUM_CHOOSE_HEADER_FOREGROUND="$C_DIM"
-export GUM_CONFIRM_SELECTED_FOREGROUND="$C_SECONDARY"
-export GUM_CONFIRM_UNSELECTED_FOREGROUND="#E5E7EB"
-export GUM_CONFIRM_PROMPT_FOREGROUND="$C_PRIMARY"
-export GUM_INPUT_PROMPT_FOREGROUND="$C_PRIMARY"
-export GUM_INPUT_CURSOR_FOREGROUND="$C_SECONDARY"
-export GUM_INPUT_TEXT_FOREGROUND="#E5E7EB"
-
 [ -f "$SESSION_LOG" ] || touch "$SESSION_LOG"
-mkdir -p "$TMPDIR"
+mkdir -p "$CCSM_TMPDIR"
 
-# gum renders its TUI on stderr. Some terminal setups (p10k, zsh plugins)
-# suppress stderr display. We redirect stderr to /dev/tty so the TUI is
-# always visible, while stdout (the result) stays capturable by $().
-gum() { command gum "$@" 2>/dev/tty; }
+# Lookup a session by ID (exact match on first field, no regex)
+lookup_sid() {
+    awk -F'\t' -v sid="$1" '$1 == sid' "$SESSION_LOG"
+}
+
+###############################################################################
+# Cross-platform compatibility wrappers
+###############################################################################
+
+# Reverse lines (tac on Linux, tail -r on macOS/BSD)
+if command -v tac &>/dev/null; then
+    _tac() { tac "$@"; }
+else
+    _tac() { tail -r "$@"; }
+fi
+
+# File lock for safe TSV writes (prevents data loss with parallel sessions)
+LOCKFILE="${SESSION_LOG}.lock"
+if command -v flock &>/dev/null; then
+    with_lock() {
+        {
+            flock -w 5 200 || { echo "Warning: could not acquire lock" >&2; return 1; }
+            "$@"
+        } 200>"$LOCKFILE"
+    }
+else
+    # Fallback: mkdir-based lock (atomic on all platforms)
+    with_lock() {
+        local lockdir="${LOCKFILE}.d"
+        local tries=0
+        while ! mkdir "$lockdir" 2>/dev/null; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 50 ]; then
+                # Stale lock? Remove if older than 30s
+                if [ -d "$lockdir" ]; then
+                    local lock_age
+                    lock_age=$(( $(date '+%s') - $(stat -f '%m' "$lockdir" 2>/dev/null || stat -c '%Y' "$lockdir" 2>/dev/null || echo 0) ))
+                    [ "$lock_age" -gt 30 ] && rmdir "$lockdir" 2>/dev/null && continue
+                fi
+                echo "Warning: could not acquire lock" >&2
+                return 1
+            fi
+            sleep 0.1
+        done
+        "$@"
+        local rc=$?
+        rmdir "$lockdir" 2>/dev/null
+        return $rc
+    }
+fi
 
 # Unified prompt helpers (consistent style across all screens)
 # ask_yn "Question?" → sets ANSWER=j/n (instant, no Enter needed)
@@ -241,7 +274,9 @@ ask_yn() {
     local yes_char
     yes_char=$(t confirm_yes)
     echo -ne "  ${A_BOLD}${question}${A_RST} ${A_GREEN}[${yes_char}/n]${A_RST} "
+    # read -n 1 can leave terminal in non-canonical mode; stty sane resets it
     read -r -n 1 ANSWER
+    stty sane 2>/dev/null
     echo ""
     ANSWER="${ANSWER,,}"
     # Treat Enter (empty) as yes
@@ -271,7 +306,7 @@ ask_path() {
     else
         echo -e "  ${label}"
     fi
-    echo -n "  > "; read -e -r ANSWER
+    echo -n "  > "; read -r ANSWER
     [ -z "$ANSWER" ] && ANSWER="$default"
 }
 
@@ -308,11 +343,12 @@ format_tokens() {
         echo "0"
         return
     fi
-    # LC_ALL=C ensures dot as decimal separator
     if [ "$n" -ge 1000000 ] 2>/dev/null; then
-        LC_ALL=C printf "%.1fM" "$(echo "scale=1; $n/1000000" | LC_ALL=C bc)"
+        local whole=$((n / 1000000)) frac=$(( (n % 1000000) * 10 / 1000000 ))
+        echo "${whole}.${frac}M"
     elif [ "$n" -ge 1000 ] 2>/dev/null; then
-        LC_ALL=C printf "%.1fk" "$(echo "scale=1; $n/1000" | LC_ALL=C bc)"
+        local whole=$((n / 1000)) frac=$(( (n % 1000) * 10 / 1000 ))
+        echo "${whole}.${frac}k"
     else
         echo "$n"
     fi
@@ -325,8 +361,20 @@ days_since() {
     local date_str="$1"
     local now today_sec date_sec
     now=$(date '+%Y-%m-%d')
-    today_sec=$(date -d "$now" '+%s' 2>/dev/null) || today_sec=$(date '+%s')
-    date_sec=$(date -d "$date_str" '+%s' 2>/dev/null) || return 1
+    case "$CCSM_OS" in
+        Linux)
+            today_sec=$(date -d "$now" '+%s' 2>/dev/null) || today_sec=$(date '+%s')
+            date_sec=$(date -d "$date_str" '+%s' 2>/dev/null) || return 1
+            ;;
+        Darwin|FreeBSD)
+            today_sec=$(date -jf '%Y-%m-%d' "$now" '+%s' 2>/dev/null) || today_sec=$(date '+%s')
+            date_sec=$(date -jf '%Y-%m-%d' "$date_str" '+%s' 2>/dev/null) || return 1
+            ;;
+        *)
+            today_sec=$(python3 -c "import datetime; print(int(datetime.datetime.strptime('$now','%Y-%m-%d').timestamp()))" 2>/dev/null) || today_sec=$(date '+%s')
+            date_sec=$(python3 -c "import datetime; print(int(datetime.datetime.strptime('$date_str','%Y-%m-%d').timestamp()))" 2>/dev/null) || return 1
+            ;;
+    esac
     echo $(( (today_sec - date_sec) / 86400 ))
 }
 
@@ -442,7 +490,7 @@ build_table() {
             "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")")
 
         [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
-    done < <(tac "$SESSION_LOG")
+    done < <(_tac "$SESSION_LOG")
 
     TABLE_LINES+=("$(table_bottom)")
 }
@@ -504,46 +552,15 @@ build_table_compact() {
             $cw_ti "$(format_tokens "$tot_in") " $cw_to "$(format_tokens "$tot_out") ")")
 
         [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
-    done < <(tac "$SESSION_LOG")
+    done < <(_tac "$SESSION_LOG")
 
     lines+=("$(printf '└%s┴%s┴%s┴%s┴%s┴%s┘' "$(_hl $cw_num)" "$(_hl $cw_date)" "$(_hl $cw_subj)" "$(_hl $cw_dir)" "$(_hl $cw_ti)" "$(_hl $cw_to)")")
 
     COMPACT_TABLE_LINES=("${lines[@]}")
 }
 
-# Build plain rows for gum choose (no borders, just numbered rows for selection)
-build_choice_rows() {
-    local max_items="${1:-0}"
-    TABLE_SIDS=()
-    local idx=0
-
-    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
-        idx=$((idx + 1))
-        TABLE_SIDS+=("$sid")
-
-        local short_betreff="${betreff:0:20}"
-        [ ${#betreff} -gt 20 ] && short_betreff="${short_betreff}.."
-        local short_cwd="${cwd/#$HOME/\~}"
-        local short_cwd_d="${short_cwd:0:16}"
-        [ ${#short_cwd} -gt 16 ] && short_cwd_d="..${short_cwd: -14}"
-
-        local tot_in="0" tot_out="0"
-        if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
-            local total_part="${tokens_col%%|*}"
-            tot_in=$(echo "$total_part" | cut -d/ -f1)
-            tot_out=$(echo "$total_part" | cut -d/ -f2)
-        fi
-
-        printf "%-3s %-12s %-20s %-16s %7s %7s\n" \
-            "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
-            "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")"
-
-        [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
-    done < <(tac "$SESSION_LOG")
-}
-
 ###############################################################################
-# Render a unified box with gum style
+# Render a unified box
 ###############################################################################
 render_box() {
     local title="$1"
@@ -563,7 +580,7 @@ render_box() {
         local content="$1"
         # Get visible length (strip ANSI codes)
         local visible
-        visible=$(echo -e "$content" | sed 's/\x1b\[[0-9;]*m//g')
+        visible=$(echo -e "$content" | sed $'s/\033\\[[0-9;]*m//g')
         local vlen=${#visible}
         local pad=$((inner - vlen))
         [ "$pad" -lt 0 ] && pad=0
@@ -621,7 +638,7 @@ check_cleanup() {
 
     render_box "$cleanup_title" "" "$(printf '%s\n' "${choices[@]}")"
     echo ""
-    echo -e "  Enter numbers to delete (comma-separated, e.g. 1,3) or ${A_GREEN}[q]${A_RST} to skip:"
+    echo -e "  $(t cleanup_select_prompt)"
     echo -n "  > "; read -r cleanup_input
 
     [[ "$cleanup_input" == "q" ]] || [[ "$cleanup_input" == "Q" ]] || [[ -z "$cleanup_input" ]] && return
@@ -637,20 +654,23 @@ check_cleanup() {
         fi
     done
 
-    local tmplog="${SESSION_LOG}.tmp"
     local del_count=0
-    while IFS=$'\t' read -r s c b d t_col tk; do
-        local sid_match=false
-        for del_sid in "${delete_sids[@]}"; do
-            [ "$s" = "$del_sid" ] && sid_match=true && break
-        done
-        if $sid_match; then
-            del_count=$((del_count + 1))
-        else
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
-        fi
-    done < "$SESSION_LOG" > "$tmplog"
-    mv "$tmplog" "$SESSION_LOG"
+    _do_cleanup_delete() {
+        local tmplog="${SESSION_LOG}.tmp"
+        while IFS=$'\t' read -r s c b d t_col tk; do
+            local sid_match=false
+            for del_sid in "${delete_sids[@]}"; do
+                [ "$s" = "$del_sid" ] && sid_match=true && break
+            done
+            if $sid_match; then
+                del_count=$((del_count + 1))
+            else
+                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+            fi
+        done < "$SESSION_LOG" > "$tmplog"
+        mv "$tmplog" "$SESSION_LOG"
+    }
+    with_lock _do_cleanup_delete
 
     if [ "$del_count" -gt 0 ]; then
         local msg
@@ -771,7 +791,7 @@ quick_resume() {
             if [ "$idx" -ge 0 ] && [ "$idx" -lt "$session_count" ]; then
                 local sid="${CHOICE_SIDS[$idx]}"
                 local line
-                line=$(grep "^${sid}	" "$SESSION_LOG")
+                line=$(lookup_sid "$sid")
                 SELECTED_SID=$(echo "$line" | cut -f1)
                 SELECTED_CWD=$(echo "$line" | cut -f2)
                 SELECTED_BETREFF=$(echo "$line" | cut -f3)
@@ -797,7 +817,7 @@ _search_and_resume() {
     search_table_lines+=("$(table_mid)")
 
     while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
-        if echo "$betreff $cwd $tags" | grep -qi "$query"; then
+        if echo "$betreff $cwd $tags" | grep -qiF "$query"; then
             idx=$((idx + 1))
             SEARCH_SIDS+=("$sid")
 
@@ -822,7 +842,7 @@ _search_and_resume() {
                 "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
                 "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")")
         fi
-    done < <(tac "$SESSION_LOG")
+    done < <(_tac "$SESSION_LOG")
 
     if [ ${#SEARCH_SIDS[@]} -eq 0 ]; then
         echo -e "  ${A_AMBER}$(t search_no_results)${A_RST}"
@@ -862,7 +882,7 @@ _search_and_resume() {
             if [ "$sidx" -ge 0 ] && [ "$sidx" -lt "${#SEARCH_SIDS[@]}" ]; then
                 local sid="${SEARCH_SIDS[$sidx]}"
                 local line
-                line=$(grep "^${sid}	" "$SESSION_LOG")
+                line=$(lookup_sid "$sid")
                 SELECTED_SID=$(echo "$line" | cut -f1)
                 SELECTED_CWD=$(echo "$line" | cut -f2)
                 SELECTED_BETREFF=$(echo "$line" | cut -f3)
@@ -893,6 +913,7 @@ resume_session() {
     }
     claude --resume "$sid" "$@"
     save_session
+    cd "$CCSM_START_DIR" 2>/dev/null || true
 }
 
 ###############################################################################
@@ -933,8 +954,8 @@ delete_session() {
     box_lines+=("$dline")
     box_lines+=("  ${A_TEAL}${A_BOLD}$(t menu_action)${A_RST}")
     box_lines+=("")
-    box_lines+=("  ${A_GREEN}[1-${session_count}]${A_RST} Enter number(s) to delete (comma-separated: 1,3,5)")
-    box_lines+=("  ${A_GREEN}[q]${A_RST}     Back")
+    box_lines+=("  $(t cleanup_select_prompt)")
+    box_lines+=("  ${A_GREEN}[q]${A_RST}     $(t menu_quit)")
 
     render_box "" "${box_lines[@]}"
     echo ""
@@ -959,24 +980,27 @@ delete_session() {
 
     # Confirm
     echo ""
-    echo -n "  $(t delete_confirm) (${#delete_sids[@]} selected) [y/n]: "; read -r confirm
-    [[ "${confirm,,}" != "y" ]] && [[ "${confirm,,}" != "j" ]] && return
+    ask_yn "$(t delete_confirm) (${#delete_sids[@]} selected)"
+    is_yes "$ANSWER" || return
 
     # Delete from log
-    local tmplog="${SESSION_LOG}.tmp"
     local del_count=0
-    while IFS=$'\t' read -r s c b d t_col tk; do
-        local sid_match=false
-        for del_sid in "${delete_sids[@]}"; do
-            [ "$s" = "$del_sid" ] && sid_match=true && break
-        done
-        if $sid_match; then
-            del_count=$((del_count + 1))
-        else
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
-        fi
-    done < "$SESSION_LOG" > "$tmplog"
-    mv "$tmplog" "$SESSION_LOG"
+    _do_session_delete() {
+        local tmplog="${SESSION_LOG}.tmp"
+        while IFS=$'\t' read -r s c b d t_col tk; do
+            local sid_match=false
+            for del_sid in "${delete_sids[@]}"; do
+                [ "$s" = "$del_sid" ] && sid_match=true && break
+            done
+            if $sid_match; then
+                del_count=$((del_count + 1))
+            else
+                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+            fi
+        done < "$SESSION_LOG" > "$tmplog"
+        mv "$tmplog" "$SESSION_LOG"
+    }
+    with_lock _do_session_delete
 
     if [ "$del_count" -gt 0 ]; then
         local msg
@@ -1158,7 +1182,7 @@ show_stats() {
     done
     box_lines+=("")
     box_lines+=("$dline")
-    box_lines+=("  ${A_GREEN}[q]${A_RST} Back")
+    box_lines+=("  ${A_GREEN}[q]${A_RST} $(t menu_quit)")
 
     render_box "" "${box_lines[@]}"
     echo ""
@@ -1221,11 +1245,11 @@ PYEOF
 }
 
 ###############################################################################
-# Save session (guided gum flow)
+# Save session (guided flow)
 ###############################################################################
 save_session() {
     local tmpfile=""
-    tmpfile=$(ls -t "$TMPDIR"/session-*.json 2>/dev/null | head -1)
+    tmpfile=$(ls -t "$CCSM_TMPDIR"/session-*.json 2>/dev/null | head -1)
     [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ] && [ -f "/tmp/claude-session-end.json" ] && tmpfile="/tmp/claude-session-end.json"
 
     if [ -z "$tmpfile" ]; then
@@ -1233,7 +1257,7 @@ save_session() {
         while [ $waited -lt 10 ]; do
             sleep 0.5
             waited=$((waited + 1))
-            tmpfile=$(ls -t "$TMPDIR"/session-*.json 2>/dev/null | head -1)
+            tmpfile=$(ls -t "$CCSM_TMPDIR"/session-*.json 2>/dev/null | head -1)
             [ -n "$tmpfile" ] && break
         done
     fi
@@ -1263,7 +1287,7 @@ save_session() {
     local datum
     datum=$(date '+%Y-%m-%d')
     local existing_line
-    existing_line=$(grep "^${sid}	" "$SESSION_LOG" 2>/dev/null)
+    existing_line=$(lookup_sid "$sid")
 
     # Parse tokens for display
     local disp_in="0" disp_out="0"
@@ -1313,15 +1337,18 @@ save_session() {
             new_tokens="$(( old_in + cur_in ))/$(( old_out + cur_out ))|${cur_in}/${cur_out}"
         fi
 
-        local tmplog="${SESSION_LOG}.tmp"
-        while IFS=$'\t' read -r s c b d t_col tk; do
-            if [ "$s" = "$sid" ]; then
-                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$new_betreff" "$datum" "$t_col" "$new_tokens"
-            else
-                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
-            fi
-        done < "$SESSION_LOG" > "$tmplog"
-        mv "$tmplog" "$SESSION_LOG"
+        _do_save_update() {
+            local tmplog="${SESSION_LOG}.tmp"
+            while IFS=$'\t' read -r s c b d t_col tk; do
+                if [ "$s" = "$sid" ]; then
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$new_betreff" "$datum" "$t_col" "$new_tokens"
+                else
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+                fi
+            done < "$SESSION_LOG" > "$tmplog"
+            mv "$tmplog" "$SESSION_LOG"
+        }
+        with_lock _do_save_update
         echo -e "  ${A_GREEN}✓ $(t save_updated): ${new_betreff}${A_RST}"
     else
         # New session — guided flow
@@ -1370,7 +1397,10 @@ save_session() {
 
         # Save
         chosen_betreff=$(echo "$chosen_betreff" | tr '\t' ' ')
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$chosen_tags" "${tokens}|${tokens}" >> "$SESSION_LOG"
+        _do_save_append() {
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$chosen_tags" "${tokens}|${tokens}" >> "$SESSION_LOG"
+        }
+        with_lock _do_save_append
         echo -e "  ${A_GREEN}✓ $(t save_saved): ${chosen_betreff}${A_RST}"
     fi
 
@@ -1442,10 +1472,13 @@ start_new_session() {
 
     if [[ "$ANSWER" == "n" ]]; then
         while true; do
-            ask_path "$(t new_dir_enter)" "$PWD"
+            ask_path "$(t new_dir_enter_or_q)" ""
             local new_dir="$ANSWER"
 
-            [ -z "$new_dir" ] && break
+            # Empty input or q → cancel, back to main menu
+            if [ -z "$new_dir" ] || [[ "$new_dir" == "q" ]]; then
+                return
+            fi
 
             # Expand ~ to $HOME
             new_dir="${new_dir/#\~/$HOME}"
@@ -1469,7 +1502,7 @@ start_new_session() {
 
     # Change to target directory
     cd "$target_dir" || {
-        echo -e "  ${A_WARN}$(t err_no_dir): $target_dir${A_RST}"
+        echo -e "  ${A_AMBER}$(t err_no_dir): $target_dir${A_RST}"
         sleep 2
         return
     }
@@ -1482,12 +1515,15 @@ start_new_session() {
 
     claude "$@"
     save_session
+    cd "$CCSM_START_DIR" 2>/dev/null || true
 }
 
 ###############################################################################
 # Main
 ###############################################################################
 main() {
+    local CCSM_START_DIR="$PWD"
+
     case "${1:-}" in
         --search) shift; search_sessions "$*"; return ;;
         --stats) show_stats; return ;;
@@ -1508,7 +1544,7 @@ main() {
                 if [ "$idx" -lt "${#TABLE_SIDS[@]}" ]; then
                     local sid="${TABLE_SIDS[$idx]}"
                     local line
-                    line=$(grep "^${sid}	" "$SESSION_LOG")
+                    line=$(lookup_sid "$sid")
                     local r_cwd r_betreff
                     r_cwd=$(echo "$line" | cut -f2)
                     r_betreff=$(echo "$line" | cut -f3)

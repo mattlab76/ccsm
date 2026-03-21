@@ -15,7 +15,7 @@ setup() {
     create_test_sessions
     run_fn show_stats
     assert_success
-    assert_output --partial "5 Sessions"
+    assert_output --partial "5 session(s)"
 }
 
 @test "stats: zeigt älteste Session" {

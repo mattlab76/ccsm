@@ -20,8 +20,8 @@ _common_setup() {
     # Set paths used by ccsm
     export SESSION_LOG="$BATS_TEST_TMPDIR/.claude/session_log.tsv"
     export CONFIG_FILE="$BATS_TEST_TMPDIR/.claude/ccsm.conf"
-    export TMPDIR="$BATS_TEST_TMPDIR/tmp-ccsm"
-    mkdir -p "$TMPDIR"
+    export CCSM_TMPDIR="$BATS_TEST_TMPDIR/tmp-ccsm"
+    mkdir -p "$CCSM_TMPDIR"
 
     # Create empty session log
     touch "$SESSION_LOG"
@@ -41,7 +41,7 @@ run_fn() {
     # Pass arguments safely via positional parameters to avoid # and quote issues
     output=$(bash -c '
         export CCSM_TESTING=true CCSM_LANG=en HAS_FZF=false
-        export HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" TMPDIR="'"$TMPDIR"'"
+        export HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" CCSM_TMPDIR="'"$CCSM_TMPDIR"'"
         source "'"$CCSM_ROOT"'/ccsm"
         '"$fn_name"' "$@"
     ' _ "$@" 2>&1) || true
@@ -93,7 +93,7 @@ create_temp_session_file() {
     local cwd="${2:-/tmp/test}"
     local betreff="${3:-Test Betreff}"
     local transcript="${4:-}"
-    local tmpfile="$TMPDIR/session-${sid}.json"
+    local tmpfile="$CCSM_TMPDIR/session-${sid}.json"
     cat > "$tmpfile" <<EOF
 {"session_id":"${sid}","cwd":"${cwd}","betreff":"${betreff}","transcript":"${transcript}"}
 EOF

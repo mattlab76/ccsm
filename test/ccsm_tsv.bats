@@ -40,27 +40,28 @@ setup() {
 
 # --- show_sessions ---
 
-@test "show_sessions: gibt Meldung bei leerem Log" {
-    run_fn show_sessions
-    [[ "$output" == *"No"* ]] || [[ "$output" == *"session"* ]]
+@test "build_table: leeres Log erzeugt keine Zeilen" {
+    build_table 0
+    [ "${#TABLE_LINES[@]}" -eq 0 ]
 }
 
-@test "show_sessions: zeigt Sessions an" {
+@test "build_table: zeigt Sessions an" {
     create_test_sessions
-    run_fn show_sessions
-    assert_success
-    assert_output --partial "Erstes Projekt"
-    assert_output --partial "Fuenftes Projekt"
+    build_table 0
+    local table_output
+    table_output=$(printf '%s\n' "${TABLE_LINES[@]}")
+    [[ "$table_output" == *"Erstes Projekt"* ]]
+    [[ "$table_output" == *"Fuenftes Projekt"* ]]
 }
 
-@test "show_sessions: zeigt Sessions in umgekehrter Reihenfolge" {
+@test "build_table: Sessions in umgekehrter Reihenfolge" {
     create_test_sessions
-    run_fn show_sessions
-    assert_success
-    # Fuenftes (neueste) sollte vor Erstes (älteste) erscheinen
+    build_table 0
+    local table_output
+    table_output=$(printf '%s\n' "${TABLE_LINES[@]}")
     local pos_fuenftes pos_erstes
-    pos_fuenftes=$(echo "$output" | grep -n "Fuenftes" | head -1 | cut -d: -f1)
-    pos_erstes=$(echo "$output" | grep -n "Erstes" | head -1 | cut -d: -f1)
+    pos_fuenftes=$(echo "$table_output" | grep -n "Fuenftes" | head -1 | cut -d: -f1)
+    pos_erstes=$(echo "$table_output" | grep -n "Erstes" | head -1 | cut -d: -f1)
     [ "$pos_fuenftes" -lt "$pos_erstes" ]
 }
 

@@ -1,12 +1,12 @@
 # Maintainer: Matthias Haas <matthias.haas@mattlab.at>
 pkgname=ccsm-git
-pkgver=1.5.0.r1.g8737722
+pkgver=1.5.0.r23.gf65e6c8
 pkgrel=1
 pkgdesc="Claude Code Session Manager - save, tag, search and resume Claude Code sessions"
 arch=('any')
 url="https://github.com/mattlab76/ccsm"
 license=('MIT')
-depends=('bash' 'jq' 'python' 'gum' 'bc')
+depends=('bash>=4' 'jq' 'python')
 optdepends=(
     'fzf: fuzzy search support'
     'zsh: tab completion'

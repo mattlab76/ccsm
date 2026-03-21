@@ -1,6 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ccsm Installer
 set -e
+
+# Require bash 4+
+if ((BASH_VERSINFO[0] < 4)); then
+    echo "Error: ccsm requires bash 4.0 or later (you have $BASH_VERSION)."
+    [[ "$(uname -s)" == "Darwin" ]] && echo "Run: brew install bash"
+    exit 1
+fi
+
+CCSM_OS="$(uname -s)"
 
 BOLD='\033[1m'
 GREEN='\033[32m'
@@ -9,10 +18,35 @@ RED='\033[31m'
 CYAN='\033[36m'
 RESET='\033[0m'
 
-# Language detection
-case "${CCSM_LANG:-${LC_ALL:-${LANG:-}}}" in
-    de*) L="de" ;;
-    *)   L="en" ;;
+# Language detection — interactive during install
+DETECTED_LOCALE="${CCSM_LANG:-${LC_ALL:-${LANG:-}}}"
+L="en"
+CCSM_LANG_SETTING=""
+
+case "$DETECTED_LOCALE" in
+    de*)
+        echo -e "${BOLD}Sprache / Language${RESET}"
+        echo -e "  Deutsche Locale erkannt (${DETECTED_LOCALE})"
+        echo -ne "  ${BOLD}Deutsche Sprache verwenden?${RESET} [j/n] "
+        read -r -n 1 lang_choice
+        echo ""
+        if [[ "${lang_choice,,}" == "j" ]] || [[ -z "$lang_choice" ]]; then
+            L="de"
+            CCSM_LANG_SETTING="de"
+        else
+            CCSM_LANG_SETTING="en"
+        fi
+        echo ""
+        ;;
+    en*)
+        CCSM_LANG_SETTING="en"
+        ;;
+    *)
+        echo -e "${YELLOW}Note: Your locale (${DETECTED_LOCALE}) is not supported.${RESET}"
+        echo -e "  ccsm supports English and German. Using English (default)."
+        echo ""
+        CCSM_LANG_SETTING="en"
+        ;;
 esac
 
 # Translations
@@ -20,8 +54,10 @@ if [[ "$L" == "de" ]]; then
     T_TITLE="ccsm Installer"
     T_CHECKING="Prüfe Abhängigkeiten..."
     T_NOT_INSTALLED="ist nicht installiert."
-    T_OPTIONAL="optional, Fuzzy-Suche aktiv"
-    T_OPTIONAL_MISS="optional, nicht installiert — Fuzzy-Suche deaktiviert"
+    T_MISSING_HEADER="Fehlende Abhängigkeiten:"
+    T_MISSING_INSTALL="Bitte die fehlenden Pakete installieren bevor ccsm genutzt werden kann."
+    T_MISSING_CONTINUE="Trotzdem fortfahren? [j/n]"
+    T_MISSING_ABORT="Installation abgebrochen."
     T_INSTALLING="Installiere ccsm..."
     T_CONFIG_HOOK="Konfiguriere Claude Code Hook..."
     T_HOOK_EXISTS="Hook bereits in settings.json vorhanden"
@@ -39,8 +75,10 @@ else
     T_TITLE="ccsm Installer"
     T_CHECKING="Checking dependencies..."
     T_NOT_INSTALLED="is not installed."
-    T_OPTIONAL="optional, fuzzy search active"
-    T_OPTIONAL_MISS="optional, not installed — fuzzy search disabled"
+    T_MISSING_HEADER="Missing dependencies:"
+    T_MISSING_INSTALL="Please install the missing packages before using ccsm."
+    T_MISSING_CONTINUE="Continue anyway? [y/n]"
+    T_MISSING_ABORT="Installation cancelled."
     T_INSTALLING="Installing ccsm..."
     T_CONFIG_HOOK="Configuring Claude Code hook..."
     T_HOOK_EXISTS="Hook already in settings.json"
@@ -66,47 +104,73 @@ CONFIG_FILE="${HOME}/.claude/ccsm.conf"
 echo -e "${BOLD}${T_TITLE}${RESET}"
 echo ""
 
-# Check dependencies
+# Check dependencies — collect all missing, then report
 echo -e "${BOLD}${T_CHECKING}${RESET}"
 
-if ! command -v claude &>/dev/null; then
-    echo -e "${RED}Claude Code ${T_NOT_INSTALLED}${RESET}"
-    echo "Installation: https://docs.anthropic.com/en/docs/claude-code/overview"
-    exit 1
-fi
-echo -e "  ${GREEN}✓${RESET} Claude Code"
+MISSING=()
 
-if ! command -v jq &>/dev/null; then
-    echo -e "${RED}jq ${T_NOT_INSTALLED}${RESET}"
-    echo "Install: sudo pacman -S jq  /  sudo apt install jq  /  brew install jq"
-    exit 1
-fi
-echo -e "  ${GREEN}✓${RESET} jq"
-
-if ! command -v python3 &>/dev/null; then
-    echo -e "${RED}python3 ${T_NOT_INSTALLED}${RESET}"
-    exit 1
-fi
-echo -e "  ${GREEN}✓${RESET} python3"
-
-if ! command -v gum &>/dev/null; then
-    echo -e "${RED}gum ${T_NOT_INSTALLED}${RESET}"
-    echo "Install: sudo pacman -S gum  /  brew install gum  /  go install github.com/charmbracelet/gum@latest"
-    exit 1
-fi
-echo -e "  ${GREEN}✓${RESET} gum"
-
-if ! command -v bc &>/dev/null; then
-    echo -e "${RED}bc ${T_NOT_INSTALLED}${RESET}"
-    echo "Install: sudo pacman -S bc  /  sudo apt install bc  /  brew install bc"
-    exit 1
-fi
-echo -e "  ${GREEN}✓${RESET} bc"
-
-if command -v fzf &>/dev/null; then
-    echo -e "  ${GREEN}✓${RESET} fzf (${T_OPTIONAL})"
+if command -v claude &>/dev/null; then
+    echo -e "  ${GREEN}✓${RESET} Claude Code"
 else
-    echo -e "  ${YELLOW}○${RESET} fzf (${T_OPTIONAL_MISS})"
+    echo -e "  ${RED}✗${RESET} Claude Code"
+    MISSING+=("claude")
+fi
+
+if command -v jq &>/dev/null; then
+    echo -e "  ${GREEN}✓${RESET} jq"
+else
+    echo -e "  ${RED}✗${RESET} jq"
+    MISSING+=("jq")
+fi
+
+if command -v python3 &>/dev/null; then
+    echo -e "  ${GREEN}✓${RESET} python3"
+else
+    echo -e "  ${RED}✗${RESET} python3"
+    MISSING+=("python3")
+fi
+
+# Show missing dependencies and install hints
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo ""
+    echo -e "${RED}${BOLD}${T_MISSING_HEADER}${RESET}"
+    echo ""
+    for dep in "${MISSING[@]}"; do
+        case "$dep" in
+            claude)
+                echo -e "  ${RED}•${RESET} Claude Code"
+                echo "    https://docs.anthropic.com/en/docs/claude-code/overview"
+                ;;
+            jq)
+                echo -e "  ${RED}•${RESET} jq"
+                case "$CCSM_OS" in
+                    Linux)   echo "    sudo pacman -S jq  /  sudo apt install jq" ;;
+                    Darwin)  echo "    brew install jq" ;;
+                    FreeBSD) echo "    sudo pkg install jq" ;;
+                    *)       echo "    https://jqlang.github.io/jq/download/" ;;
+                esac
+                ;;
+            python3)
+                echo -e "  ${RED}•${RESET} python3"
+                case "$CCSM_OS" in
+                    Linux)   echo "    sudo pacman -S python  /  sudo apt install python3" ;;
+                    Darwin)  echo "    brew install python3" ;;
+                    FreeBSD) echo "    sudo pkg install python3" ;;
+                    *)       echo "    https://www.python.org/downloads/" ;;
+                esac
+                ;;
+        esac
+    done
+    echo ""
+    echo -e "${T_MISSING_INSTALL}"
+    echo -ne "${T_MISSING_CONTINUE} "
+    read -r -n 1 dep_choice
+    echo ""
+    if [[ "${dep_choice,,}" == "n" ]]; then
+        echo -e "${T_MISSING_ABORT}"
+        exit 1
+    fi
+    echo ""
 fi
 
 echo ""
@@ -134,7 +198,11 @@ fi
 # Config
 if [ ! -f "$CONFIG_FILE" ]; then
     cp "$SCRIPT_DIR/ccsm.conf.example" "$CONFIG_FILE"
-    echo -e "  ${GREEN}✓${RESET} ${CONFIG_FILE} (${T_CONFIG_NEW})"
+    # Write chosen language to config
+    if [ -n "$CCSM_LANG_SETTING" ]; then
+        echo "CCSM_LANG=$CCSM_LANG_SETTING" >> "$CONFIG_FILE"
+    fi
+    echo -e "  ${GREEN}✓${RESET} ${CONFIG_FILE} (${T_CONFIG_NEW}, CCSM_LANG=${CCSM_LANG_SETTING})"
 else
     echo -e "  ${YELLOW}○${RESET} ${CONFIG_FILE} (${T_CONFIG_EXISTS})"
 fi
@@ -193,6 +261,11 @@ else
     echo "${T_ADD_PATH}"
     echo ""
     echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    if [[ "$CCSM_OS" == "Darwin" ]]; then
+        echo "  (add to ~/.zshrc or ~/.bash_profile)"
+    else
+        echo "  (add to ~/.bashrc or ~/.zshrc)"
+    fi
     echo ""
     echo -e "${T_THEN}: ${CYAN}ccsm${RESET}"
 fi

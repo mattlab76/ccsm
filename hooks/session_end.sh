@@ -1,21 +1,34 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ccsm SessionEnd Hook
 # Saves session metadata to a temp file for the ccsm wrapper
 # Input comes via stdin as JSON from Claude Code
 # Uses session ID in filename to support parallel sessions
 
-TMPDIR="/tmp/ccsm"
-mkdir -p "$TMPDIR"
+CCSM_TMPDIR="/tmp/ccsm"
+mkdir -p "$CCSM_TMPDIR"
+
+# Check dependencies
+for cmd in jq python3; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "ccsm hook: $cmd not found, skipping session save" >&2
+        exit 0
+    fi
+done
 
 # Read JSON input
 INPUT=$(cat)
+if [ -z "$INPUT" ]; then
+    echo "ccsm hook: no input received" >&2
+    exit 0
+fi
+
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 
 [ -z "$SESSION_ID" ] && exit 0
 
-TMPFILE="${TMPDIR}/session-${SESSION_ID}.json"
+TMPFILE="${CCSM_TMPDIR}/session-${SESSION_ID}.json"
 
 # Extract first user prompt and token usage from transcript
 BETREFF=""
@@ -83,4 +96,4 @@ jq -n \
     '{"session_id": $sid, "cwd": $cwd, "betreff": $betreff, "transcript": $transcript, "tokens": $tokens}' > "$TMPFILE"
 
 # Cleanup old temp files (older than 1 day)
-find "$TMPDIR" -name "session-*.json" -mtime +1 -delete 2>/dev/null
+find "$CCSM_TMPDIR" -name "session-*.json" -mtime +1 -delete 2>/dev/null

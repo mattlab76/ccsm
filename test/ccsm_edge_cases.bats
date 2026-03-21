@@ -6,9 +6,9 @@ setup() {
     _common_setup
 }
 
-@test "edge: leeres Log — show_sessions gibt Meldung" {
-    run_fn show_sessions
-    [[ "$output" == *"No"* ]] || [[ "$output" == *"saved"* ]] || [[ "$output" == *"session"* ]]
+@test "edge: leeres Log — build_table erzeugt keine Zeilen" {
+    build_table 0
+    [ "${#TABLE_LINES[@]}" -eq 0 ]
 }
 
 @test "edge: leeres Log — search gibt Meldung" {
@@ -43,15 +43,15 @@ setup() {
     assert_equal "$clean" "Text mit Tabs"
 }
 
-@test "edge: sehr langer Betreff wird in show_sessions gekürzt" {
+@test "edge: sehr langer Betreff wird in build_table gekürzt" {
     local long_betreff
     long_betreff=$(printf 'A%.0s' {1..200})
     printf '%s\t%s\t%s\t%s\t%s\n' "sid-long" "/tmp" "$long_betreff" "2026-03-20" "-" > "$SESSION_LOG"
 
-    run_fn show_sessions
-    assert_success
-    # Ausgabe sollte ".." enthalten (Kürzung)
-    assert_output --partial ".."
+    build_table 0
+    local table_output
+    table_output=$(printf '%s\n' "${TABLE_LINES[@]}")
+    [[ "$table_output" == *".."* ]]
 }
 
 @test "edge: Session-ID mit Sonderzeichen im grep" {
@@ -70,7 +70,7 @@ setup() {
 
 @test "edge: save_session ohne Temp-Datei zeigt Warnung" {
     # Leeres TMPDIR, keine Temp-Dateien
-    rm -rf "$TMPDIR"/*
+    rm -rf "$CCSM_TMPDIR"/*
 
     run_fn save_session
     assert_output --partial "No session data"
