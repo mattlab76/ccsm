@@ -271,7 +271,7 @@ ask_path() {
     else
         echo -e "  ${label}"
     fi
-    echo -n "  > "; read -e ANSWER
+    echo -n "  > "; read -r ANSWER
     [ -z "$ANSWER" ] && ANSWER="$default"
 }
 
