@@ -215,8 +215,24 @@ days_since() {
 ###############################################################################
 TABLE_SIDS=()
 
-# Column widths
-_W_NUM=3; _W_DATE=12; _W_SUBJ=22; _W_DIR=18; _W_TI=9; _W_TO=9; _W_LI=9; _W_LO=9
+# Calculate column widths dynamically based on terminal width
+calc_columns() {
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 100)
+    # Available width inside outer box: cols - 12 (outer box padding + borders + inner padding)
+    local avail=$((cols - 12))
+    # Fixed columns
+    _W_NUM=3
+    _W_DATE=12
+    # Token columns: minimum 9, scale up with terminal
+    _W_TI=$(( avail * 8 / 100 )); [ "$_W_TI" -lt 9 ] && _W_TI=9
+    _W_TO=$_W_TI; _W_LI=$_W_TI; _W_LO=$_W_TI
+    # Remaining space split: 55% subject, 45% directory
+    local remaining=$((avail - _W_NUM - _W_DATE - _W_TI * 4 - 9)) # 9 = separators
+    _W_SUBJ=$((remaining * 55 / 100)); [ "$_W_SUBJ" -lt 18 ] && _W_SUBJ=18
+    _W_DIR=$((remaining - _W_SUBJ)); [ "$_W_DIR" -lt 14 ] && _W_DIR=14
+}
+calc_columns
 
 _hline() {
     local char="${1:-─}"
