@@ -235,15 +235,21 @@ mkdir -p "$TMPDIR"
 gum() { command gum "$@" 2>/dev/tty; }
 
 # Unified prompt helpers (consistent style across all screens)
-# ask_yn "Question?" → sets ANSWER=y/n
+# ask_yn "Question?" → sets ANSWER=j/n (instant, no Enter needed)
 ask_yn() {
     local question="$1"
-    echo -e "  ${A_BOLD}${question}${A_RST} ${A_GREEN}[j/n]${A_RST}"
-    echo -n "  > "; read -r ANSWER
+    local yes_char
+    yes_char=$(t confirm_yes)
+    echo -ne "  ${A_BOLD}${question}${A_RST} ${A_GREEN}[${yes_char}/n]${A_RST} "
+    read -r -n 1 ANSWER
+    echo ""  # newline after single char
     ANSWER="${ANSWER,,}"
+    # Treat Enter (empty) as yes
+    [ -z "$ANSWER" ] && ANSWER="$yes_char"
 }
 
 # ask_input "Label" "default" → sets ANSWER
+# For path inputs, use ask_path instead
 ask_input() {
     local label="$1"
     local default="$2"
@@ -253,6 +259,19 @@ ask_input() {
         echo -e "  ${label}"
     fi
     echo -n "  > "; read -r ANSWER
+    [ -z "$ANSWER" ] && ANSWER="$default"
+}
+
+# ask_path "Label" "default" → sets ANSWER (with Tab completion for paths)
+ask_path() {
+    local label="$1"
+    local default="$2"
+    if [ -n "$default" ]; then
+        echo -e "  ${label} ${A_DIM}(${default})${A_RST}"
+    else
+        echo -e "  ${label}"
+    fi
+    echo -n "  > "; read -e -r -i "$default" ANSWER
     [ -z "$ANSWER" ] && ANSWER="$default"
 }
 
@@ -1423,7 +1442,7 @@ start_new_session() {
 
     if [[ "$ANSWER" == "n" ]]; then
         while true; do
-            ask_input "$(t new_dir_enter)" "$PWD"
+            ask_path "$(t new_dir_enter)" "$PWD"
             local new_dir="$ANSWER"
 
             [ -z "$new_dir" ] && break
