@@ -12,7 +12,7 @@
 # ccsm --cleanup Manual cleanup
 # ccsm --help Show help
 
-CCSM_VERSION="1.4.0"
+CCSM_VERSION="1.5.0"
 
 # Paths
 SESSION_LOG="$HOME/.claude/session_log.tsv"
