@@ -17,6 +17,7 @@ CCSM_VERSION="1.4.0"
 # Paths
 SESSION_LOG="$HOME/.claude/session_log.tsv"
 CONFIG_FILE="$HOME/.claude/ccsm.conf"
+TOKENS_TOTAL_FILE="$HOME/.claude/ccsm_tokens_total"
 TMPDIR="/tmp/ccsm"
 
 # Defaults
@@ -189,6 +190,30 @@ mkdir -p "$TMPDIR"
 # suppress stderr display. We redirect stderr to /dev/tty so the TUI is
 # always visible, while stdout (the result) stays capturable by $().
 gum() { command gum "$@" 2>/dev/tty; }
+
+###############################################################################
+# Permanent token counter (survives session deletion)
+# File format: total_in total_out
+###############################################################################
+add_to_lifetime_tokens() {
+    local add_in="$1" add_out="$2"
+    local life_in=0 life_out=0
+    if [ -f "$TOKENS_TOTAL_FILE" ]; then
+        read -r life_in life_out < "$TOKENS_TOTAL_FILE" 2>/dev/null || true
+    fi
+    life_in=$((life_in + add_in))
+    life_out=$((life_out + add_out))
+    echo "$life_in $life_out" > "$TOKENS_TOTAL_FILE"
+}
+
+read_lifetime_tokens() {
+    local life_in=0 life_out=0
+    if [ -f "$TOKENS_TOTAL_FILE" ]; then
+        read -r life_in life_out < "$TOKENS_TOTAL_FILE" 2>/dev/null || true
+    fi
+    LIFETIME_IN=$life_in
+    LIFETIME_OUT=$life_out
+}
 
 ###############################################################################
 # Token formatting: 1353202 -> "1.4M", 47567 -> "47.6k", 102 -> "102"
@@ -969,8 +994,34 @@ show_stats() {
     box_lines+=("  Oldest:        ${oldest}")
     box_lines+=("  Newest:        ${newest}")
     box_lines+=("  Cleanup:       ${CLEANUP_DAYS} days")
-    box_lines+=("  Tokens in:     ${A_BOLD}${fmt_total_in}${A_RST}")
-    box_lines+=("  Tokens out:    ${A_BOLD}${fmt_total_out}${A_RST}")
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_TEAL}${A_BOLD}Token Usage${A_RST}")
+    box_lines+=("")
+
+    # Current sessions tokens
+    box_lines+=("  Active sessions:")
+    box_lines+=("    Tokens in:   ${A_BOLD}${fmt_total_in}${A_RST}")
+    box_lines+=("    Tokens out:  ${A_BOLD}${fmt_total_out}${A_RST}")
+    box_lines+=("")
+
+    # Lifetime tokens (survives deletion)
+    read_lifetime_tokens
+    local fmt_life_in fmt_life_out
+    fmt_life_in=$(format_tokens "$LIFETIME_IN")
+    fmt_life_out=$(format_tokens "$LIFETIME_OUT")
+    box_lines+=("  Lifetime (all time, incl. deleted):")
+    box_lines+=("    Tokens in:   ${A_BOLD}${fmt_life_in}${A_RST}")
+    box_lines+=("    Tokens out:  ${A_BOLD}${fmt_life_out}${A_RST}")
+    box_lines+=("")
+
+    # Tooltip
+    box_lines+=("  ${A_DIM}ℹ Token explanation:${A_RST}")
+    box_lines+=("  ${A_DIM}  Input tokens  = your messages + system prompt + full chat history${A_RST}")
+    box_lines+=("  ${A_DIM}                 + tool results (file contents, search results)${A_RST}")
+    box_lines+=("  ${A_DIM}                 + cache (previous conversation resent each turn)${A_RST}")
+    box_lines+=("  ${A_DIM}  Output tokens = Claude's response text + tool calls${A_RST}")
+    box_lines+=("  ${A_DIM}  Input >> Output is normal (Claude reads much more than it writes)${A_RST}")
     box_lines+=("")
     box_lines+=("$dline")
     box_lines+=("  ${A_TEAL}${A_BOLD}Top Directories${A_RST}")
@@ -1099,6 +1150,14 @@ save_session() {
     transcript=$(jq -r '.transcript // empty' "$tmpfile" 2>/dev/null)
     tokens=$(jq -r '.tokens // "0/0"' "$tmpfile" 2>/dev/null)
     [ -z "$sid" ] && return
+
+    # Add to lifetime token counter
+    if [ -n "$tokens" ] && [ "$tokens" != "0/0" ]; then
+        local lt_in lt_out
+        lt_in=$(echo "$tokens" | cut -d/ -f1)
+        lt_out=$(echo "$tokens" | cut -d/ -f2)
+        add_to_lifetime_tokens "$lt_in" "$lt_out"
+    fi
 
     local datum
     datum=$(date '+%Y-%m-%d')
