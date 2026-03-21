@@ -10,35 +10,7 @@ A terminal-based session manager for [Claude Code](https://docs.anthropic.com/en
 
 ## Screenshot
 
-```
-  ╭──────────────────────────────────────────────────────────────────────────╮
-  │                                                                          │
-  │   ╔═╗ ╔═╗ ╔═╗ ╔╦╗   Claude Code Session Manager v1.5.0   3 session(s)  │
-  │   ║   ║   ╚═╗ ║║║                                                       │
-  │   ╚═╝ ╚═╝ ╚═╝ ╩ ╩                                                       │
-  │                                                                          │
-  │  ══════════════════════════════════════════════════════════════════════   │
-  │   Recent Sessions (enter 1-5 to resume)                                  │
-  │                                                                          │
-  │   ┌───┬────────────┬──────────────────┬──────────────┬──────────┬──────┐ │
-  │   │ # │ Date       │ Subject          │ Directory    │ Total In │ ...  │ │
-  │   ├───┼────────────┼──────────────────┼──────────────┼──────────┼──────┤ │
-  │   │ 1 │ 2026-03-21 │ Cross-platform.. │ ~/appsDev/c..│    1.3M  │ ...  │ │
-  │   │ 2 │ 2026-03-20 │ Docker Setup     │ ~/infra      │  456.2k  │ ...  │ │
-  │   │ 3 │ 2026-03-19 │ Firewall Audit   │ ~/opnsense   │  234.1k  │ ...  │ │
-  │   └───┴────────────┴──────────────────┴──────────────┴──────────┴──────┘ │
-  │                                                                          │
-  │  ══════════════════════════════════════════════════════════════════════   │
-  │   What would you like to do?                                             │
-  │                                                                          │
-  │   [n] Start new session                                                  │
-  │   [s] Browse / search sessions                                           │
-  │   [d] Delete session                                                     │
-  │   [i] Statistics                                                         │
-  │   [q] Quit                                                               │
-  │                                                                          │
-  ╰──────────────────────────────────────────────────────────────────────────╯
-```
+![ccsm main menu](screenShots/Bildschirmfoto_20260321_180913.png)
 
 ---
 
