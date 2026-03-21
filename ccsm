@@ -189,6 +189,7 @@ A_TEAL='\033[38;5;36m'
 A_GREEN='\033[38;5;35m'
 A_DIM='\033[2m'
 A_BOLD='\033[1m'
+A_AMBER='\033[38;5;214m'
 A_RST='\033[0m'
 
 ###############################################################################
@@ -232,6 +233,28 @@ mkdir -p "$TMPDIR"
 # suppress stderr display. We redirect stderr to /dev/tty so the TUI is
 # always visible, while stdout (the result) stays capturable by $().
 gum() { command gum "$@" 2>/dev/tty; }
+
+# Unified prompt helpers (consistent style across all screens)
+# ask_yn "Question?" → sets ANSWER=y/n
+ask_yn() {
+    local question="$1"
+    echo -e "  ${A_BOLD}${question}${A_RST} ${A_GREEN}[j/n]${A_RST}"
+    echo -n "  > "; read -r ANSWER
+    ANSWER="${ANSWER,,}"
+}
+
+# ask_input "Label" "default" → sets ANSWER
+ask_input() {
+    local label="$1"
+    local default="$2"
+    if [ -n "$default" ]; then
+        echo -e "  ${label} ${A_DIM}(${default})${A_RST}"
+    else
+        echo -e "  ${label}"
+    fi
+    echo -n "  > "; read -r ANSWER
+    [ -z "$ANSWER" ] && ANSWER="$default"
+}
 
 ###############################################################################
 # Permanent token counter (survives session deletion)
@@ -578,25 +601,22 @@ check_cleanup() {
     done
 
     render_box "$cleanup_title" "" "$(printf '%s\n' "${choices[@]}")"
+    echo ""
+    echo -e "  Enter numbers to delete (comma-separated, e.g. 1,3) or ${A_GREEN}[q]${A_RST} to skip:"
+    echo -n "  > "; read -r cleanup_input
 
-    local to_delete
-    to_delete=$(printf '%s\n' "${choices[@]}" | \
-        gum choose --no-limit \
-            --header="Space=select Enter=confirm (select sessions to DELETE)" \
-        ) || return
-
-    [ -z "$to_delete" ] && return
+    [[ "$cleanup_input" == "q" ]] || [[ "$cleanup_input" == "Q" ]] || [[ -z "$cleanup_input" ]] && return
 
     # Extract selected indices and map to sids
     local delete_sids=()
-    while IFS= read -r selected; do
-        local sel_num
-        sel_num=$(echo "$selected" | awk '{print $1}')
+    IFS=',' read -ra sel_nums <<< "$cleanup_input"
+    for sel_num in "${sel_nums[@]}"; do
+        sel_num=$(echo "$sel_num" | tr -d ' ')
         local idx=$((sel_num - 1))
         if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#old_sids[@]}" ]; then
             delete_sids+=("${old_sids[$idx]}")
         fi
-    done <<< "$to_delete"
+    done
 
     local tmplog="${SESSION_LOG}.tmp"
     local del_count=0
@@ -616,7 +636,7 @@ check_cleanup() {
     if [ "$del_count" -gt 0 ]; then
         local msg
         printf -v msg "$(t cleanup_done)" "$del_count"
-        gum style --foreground="$C_ACCENT" "$msg"
+        echo -e "  ${A_GREEN}$msg${A_RST}"
         sleep 1
     fi
 }
@@ -675,7 +695,7 @@ show_main_menu() {
 ###############################################################################
 quick_resume() {
     if [ ! -s "$SESSION_LOG" ]; then
-        gum style --foreground="$C_WARN" "$(t sessions_none)"
+        echo -e "  ${A_AMBER}$(t sessions_none)${A_RST}"
         sleep 1
         return 1
     fi
@@ -723,7 +743,7 @@ quick_resume() {
         /*)
             # Search with the text after /
             local query="${browse_input#/}"
-            [ -z "$query" ] && { query=$(gum input --placeholder="$(t search_prompt)...") || return 1; }
+            [ -z "$query" ] && { ask_input "$(t search_prompt)" ""; query="$ANSWER" || return 1; }
             _search_and_resume "$query" "${CHOICE_SIDS[@]}"
             return $?
             ;;
@@ -786,7 +806,7 @@ _search_and_resume() {
     done < <(tac "$SESSION_LOG")
 
     if [ ${#SEARCH_SIDS[@]} -eq 0 ]; then
-        gum style --foreground="$C_WARN" "$(t search_no_results)"
+        echo -e "  ${A_AMBER}$(t search_no_results)${A_RST}"
         sleep 1
         return 1
     fi
@@ -843,13 +863,12 @@ resume_session() {
     shift 3
 
     clear
-    gum style --foreground="$C_ACCENT" --bold \
-        "$(t msg_switching): $cwd" \
-        "$(t msg_resuming): $betreff"
+    echo -e "  ${A_GREEN}${A_BOLD}$(t msg_switching): $cwd${A_RST}"
+    echo -e "  ${A_GREEN}${A_BOLD}$(t msg_resuming): $betreff${A_RST}"
     echo ""
 
     cd "$cwd" || {
-        gum style --foreground="$C_WARN" "$(t err_no_dir): $cwd"
+        echo -e "  ${A_AMBER}$(t err_no_dir): $cwd${A_RST}"
         sleep 2
         return 1
     }
@@ -862,7 +881,7 @@ resume_session() {
 ###############################################################################
 delete_session() {
     if [ ! -s "$SESSION_LOG" ]; then
-        gum style --foreground="$C_WARN" "$(t sessions_none)"
+        echo -e "  ${A_AMBER}$(t sessions_none)${A_RST}"
         sleep 1
         return
     fi
@@ -960,7 +979,7 @@ search_sessions() {
     fi
 
     if [ -z "$query" ]; then
-        query=$(gum input --placeholder="$(t search_prompt)...") || return 1
+        ask_input "$(t search_prompt)" ""; query="$ANSWER" || return 1
         [ -z "$query" ] && return 1
     fi
 
@@ -976,7 +995,7 @@ search_sessions() {
 ###############################################################################
 show_stats() {
     if [ ! -s "$SESSION_LOG" ]; then
-        gum style --foreground="$C_WARN" "$(t stats_none)"
+        echo -e "  ${A_AMBER}$(t stats_none)${A_RST}"
         sleep 1
         return
     fi
@@ -1080,7 +1099,6 @@ show_stats() {
     box_lines+=("")
 
     # Token info tooltip in amber/warn color
-    local A_AMBER='\033[38;5;214m'
     box_lines+=("  ${A_AMBER}$(t stats_token_info)${A_RST}")
     box_lines+=("  ${A_AMBER}  $(t stats_token_explain1)${A_RST}")
     box_lines+=("  ${A_AMBER}  $(t stats_token_explain2)${A_RST}")
@@ -1202,7 +1220,7 @@ save_session() {
     fi
 
     if [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ]; then
-        gum style --foreground="$C_WARN" "$(t save_no_data)"
+        echo -e "  ${A_AMBER}$(t save_no_data)${A_RST}"
         sleep 2
         return
     fi
@@ -1255,19 +1273,15 @@ save_session() {
         existing_tags=$(echo "$existing_line" | cut -f5)
         existing_tokens=$(echo "$existing_line" | cut -f6)
 
-        local action
-        action=$(printf '%s\n' "$(t save_keep): $existing_betreff" "$(t save_change)" | \
-            gum choose) || { rm -f "$tmpfile"; return; }
-
+        echo -e "  ${A_DIM}$(t save_current_subject): ${existing_betreff}${A_RST}"
+        ask_yn "$(t save_accept)"
         local new_betreff="$existing_betreff"
-        if [[ "$action" == "$(t save_change)" ]]; then
-            new_betreff=$(gum input \
-                --value="$existing_betreff" \
-                --placeholder="$(t save_enter)") || new_betreff="$existing_betreff"
+        if [[ "$ANSWER" == "n" ]]; then
+            ask_input "$(t save_enter)" "$existing_betreff"
+            new_betreff="$ANSWER"
         fi
 
-        # Accumulate tokens: total_in/total_out|last_in/last_out
-        # $tokens = current session's in/out from hook
+        # Accumulate tokens
         local cur_in cur_out
         cur_in=$(echo "$tokens" | cut -d/ -f1)
         cur_out=$(echo "$tokens" | cut -d/ -f2)
@@ -1289,13 +1303,14 @@ save_session() {
             fi
         done < "$SESSION_LOG" > "$tmplog"
         mv "$tmplog" "$SESSION_LOG"
-        gum style --foreground="$C_ACCENT" "  $(t save_updated): $new_betreff"
+        echo -e "  ${A_GREEN}✓ $(t save_updated): ${new_betreff}${A_RST}"
     else
         # New session — guided flow
 
         # Step 1: Save?
-        if ! gum confirm "$(t save_want)"; then
-            gum style --foreground="$C_DIM" "$(t save_not_saved)"
+        ask_yn "$(t save_want)"
+        if [[ "$ANSWER" == "n" ]]; then
+            echo -e "  ${A_DIM}$(t save_not_saved)${A_RST}"
             rm -f "$tmpfile"
             sleep 1
             return
@@ -1309,41 +1324,35 @@ save_session() {
             auto_betreff=$(generate_suggestions "$transcript" "$cwd" | head -1)
         fi
         [ -z "$auto_betreff" ] && auto_betreff="Session $(basename "$cwd") $datum"
-        PRESET_SUBJECT=""  # Reset after use
+        PRESET_SUBJECT=""
 
+        echo -e "  ${A_DIM}Auto: ${auto_betreff}${A_RST}"
+        ask_yn "$(t save_accept)"
         local chosen_betreff=""
-        if gum confirm "$(t save_accept)
-$auto_betreff"; then
+        if [[ "$ANSWER" != "n" ]]; then
             chosen_betreff="$auto_betreff"
         else
             # Step 3: Custom subject
             while true; do
-                chosen_betreff=$(gum input \
-                    --value="$auto_betreff" \
-                    --placeholder="$(t save_enter)") || { rm -f "$tmpfile"; return; }
+                ask_input "$(t save_enter)" "$auto_betreff"
+                chosen_betreff="$ANSWER"
 
                 [ -n "$chosen_betreff" ] && break
 
-                if ! gum confirm "$(t save_no_empty)"; then
-                    rm -f "$tmpfile"
-                    return
-                fi
+                ask_yn "$(t save_no_empty)"
+                [[ "$ANSWER" == "n" ]] && { rm -f "$tmpfile"; return; }
             done
         fi
 
         # Step 4: Tags
+        ask_input "$(t save_tags)" ""
         local chosen_tags="-"
-        local tag_input
-        tag_input=$(gum input \
-            --placeholder="$(t save_tags)" \
-            ) || true
-        [ -n "$tag_input" ] && chosen_tags=$(echo "$tag_input" | tr '\t' ' ')
+        [ -n "$ANSWER" ] && chosen_tags=$(echo "$ANSWER" | tr '\t' ' ')
 
         # Save
         chosen_betreff=$(echo "$chosen_betreff" | tr '\t' ' ')
-        # Store as total_in/total_out|last_in/last_out (first save: total = last)
         printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$chosen_tags" "${tokens}|${tokens}" >> "$SESSION_LOG"
-        gum style --foreground="$C_ACCENT" "  $(t save_saved): $chosen_betreff"
+        echo -e "  ${A_GREEN}✓ $(t save_saved): ${chosen_betreff}${A_RST}"
     fi
 
     sleep 1
@@ -1399,28 +1408,28 @@ PRESET_SUBJECT=""
 start_new_session() {
     clear
 
-    # Step 1: Optional subject
-    gum style --foreground="$C_PRIMARY" --bold --margin="0 2" "$(t menu_new)"
+    echo -e "  ${A_TEAL}${A_BOLD}$(t menu_new)${A_RST}"
     echo ""
 
-    PRESET_SUBJECT=$(gum input \
-        --placeholder="$(t new_subject_prompt)" \
-        ) || true
+    # Step 1: Optional subject
+    ask_input "$(t new_subject_prompt)" ""
+    PRESET_SUBJECT="$ANSWER"
 
     # Step 2: Directory selection
     local target_dir="$PWD"
     echo ""
-    gum style --foreground="$C_DIM" --margin="0 2" "$(t new_dir_current) $PWD"
+    echo -e "  ${A_DIM}$(t new_dir_current) $PWD${A_RST}"
+    ask_yn "$(t new_dir_question)"
 
-    if ! gum confirm "$(t new_dir_question)"; then
-        # Ask for path with gum file (directory picker)
+    if [[ "$ANSWER" == "n" ]]; then
         while true; do
-            local new_dir
-            new_dir=$(gum file --directory --height=15) || break
+            ask_input "$(t new_dir_enter)" "$PWD"
+            local new_dir="$ANSWER"
 
-            if [ -z "$new_dir" ]; then
-                break
-            fi
+            [ -z "$new_dir" ] && break
+
+            # Expand ~ to $HOME
+            new_dir="${new_dir/#\~/$HOME}"
 
             if [ -d "$new_dir" ]; then
                 target_dir="$new_dir"
@@ -1428,27 +1437,28 @@ start_new_session() {
             fi
 
             # Directory doesn't exist
-            if gum confirm "$(t new_dir_not_found)"; then
+            ask_yn "$(t new_dir_not_found)"
+            if [[ "$ANSWER" == "j" ]] || [[ "$ANSWER" == "y" ]]; then
                 mkdir -p "$new_dir"
-                gum style --foreground="$C_ACCENT" "  ✓ $(t new_dir_created)"
+                echo -e "  ${A_GREEN}✓ $(t new_dir_created)${A_RST}"
                 target_dir="$new_dir"
                 break
             fi
-            # Loop back to pick again
+            # Loop back to ask again
         done
     fi
 
     # Change to target directory
     cd "$target_dir" || {
-        gum style --foreground="$C_WARN" "$(t err_no_dir): $target_dir"
+        echo -e "  ${A_WARN}$(t err_no_dir): $target_dir${A_RST}"
         sleep 2
         return
     }
 
     clear
-    echo "$(t msg_starting)"
-    echo "  Dir: $target_dir"
-    [ -n "$PRESET_SUBJECT" ] && echo "  Subject: $PRESET_SUBJECT"
+    echo -e "  $(t msg_starting)"
+    echo -e "  Dir: ${A_TEAL}$target_dir${A_RST}"
+    [ -n "$PRESET_SUBJECT" ] && echo -e "  Subject: ${A_VIOLET}$PRESET_SUBJECT${A_RST}"
     echo ""
 
     claude "$@"
