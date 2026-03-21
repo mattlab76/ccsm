@@ -267,11 +267,11 @@ ask_path() {
     local label="$1"
     local default="$2"
     if [ -n "$default" ]; then
-        echo -e "  ${label} ${A_DIM}(${default})${A_RST}"
+        echo -e "  ${label} ${A_DIM}(Enter=${default})${A_RST}"
     else
         echo -e "  ${label}"
     fi
-    echo -n "  > "; read -e -r -i "$default" ANSWER
+    echo -n "  > "; read -e ANSWER
     [ -z "$ANSWER" ] && ANSWER="$default"
 }
 
