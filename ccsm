@@ -50,6 +50,13 @@ L_EN[menu_quit]="Quit"
 L_EN[menu_recent]="Recent Sessions (enter 1-5 to resume)"
 L_EN[menu_action]="What would you like to do?"
 L_EN[msg_starting]="Starting new Claude session..."
+L_EN[new_subject_prompt]="Subject for this session (optional, Enter=skip):"
+L_EN[new_dir_question]="Start in current directory?"
+L_EN[new_dir_current]="Current:"
+L_EN[new_dir_enter]="Enter path:"
+L_EN[new_dir_not_found]="Directory not found. Create it?"
+L_EN[new_dir_created]="Directory created."
+L_EN[new_dir_retry]="Try another path"
 L_EN[msg_switching]="Switching to"
 L_EN[msg_resuming]="Resuming session"
 L_EN[err_no_claude]="Error: Claude Code is not installed or not in PATH."
@@ -103,6 +110,13 @@ L_DE[menu_quit]="Beenden"
 L_DE[menu_recent]="Letzte Sessions (1-5 eingeben zum Fortsetzen)"
 L_DE[menu_action]="Was möchten Sie tun?"
 L_DE[msg_starting]="Starte neue Claude Session..."
+L_DE[new_subject_prompt]="Betreff für diese Session (optional, Enter=überspringen):"
+L_DE[new_dir_question]="Im aktuellen Verzeichnis starten?"
+L_DE[new_dir_current]="Aktuell:"
+L_DE[new_dir_enter]="Pfad eingeben:"
+L_DE[new_dir_not_found]="Verzeichnis nicht gefunden. Anlegen?"
+L_DE[new_dir_created]="Verzeichnis angelegt."
+L_DE[new_dir_retry]="Anderen Pfad eingeben"
 L_DE[msg_switching]="Wechsle nach"
 L_DE[msg_resuming]="Setze Session fort"
 L_DE[err_no_claude]="Fehler: Claude Code ist nicht installiert oder nicht im PATH."
@@ -1287,12 +1301,15 @@ save_session() {
             return
         fi
 
-        # Step 2: Auto-subject
+        # Step 2: Auto-subject (use preset if available)
         local auto_betreff=""
-        if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+        if [ -n "$PRESET_SUBJECT" ]; then
+            auto_betreff="$PRESET_SUBJECT"
+        elif [ -n "$transcript" ] && [ -f "$transcript" ]; then
             auto_betreff=$(generate_suggestions "$transcript" "$cwd" | head -1)
         fi
         [ -z "$auto_betreff" ] && auto_betreff="Session $(basename "$cwd") $datum"
+        PRESET_SUBJECT=""  # Reset after use
 
         local chosen_betreff=""
         if gum confirm "$(t save_accept)
@@ -1375,6 +1392,70 @@ EOF
 }
 
 ###############################################################################
+# Start new session (guided flow: subject → directory → claude)
+###############################################################################
+PRESET_SUBJECT=""
+
+start_new_session() {
+    clear
+
+    # Step 1: Optional subject
+    gum style --foreground="$C_PRIMARY" --bold --margin="0 2" "$(t menu_new)"
+    echo ""
+
+    PRESET_SUBJECT=$(gum input \
+        --placeholder="$(t new_subject_prompt)" \
+        ) || true
+
+    # Step 2: Directory selection
+    local target_dir="$PWD"
+    echo ""
+    gum style --foreground="$C_DIM" --margin="0 2" "$(t new_dir_current) $PWD"
+
+    if ! gum confirm "$(t new_dir_question)"; then
+        # Ask for path with gum file (directory picker)
+        while true; do
+            local new_dir
+            new_dir=$(gum file --directory --height=15) || break
+
+            if [ -z "$new_dir" ]; then
+                break
+            fi
+
+            if [ -d "$new_dir" ]; then
+                target_dir="$new_dir"
+                break
+            fi
+
+            # Directory doesn't exist
+            if gum confirm "$(t new_dir_not_found)"; then
+                mkdir -p "$new_dir"
+                gum style --foreground="$C_ACCENT" "  ✓ $(t new_dir_created)"
+                target_dir="$new_dir"
+                break
+            fi
+            # Loop back to pick again
+        done
+    fi
+
+    # Change to target directory
+    cd "$target_dir" || {
+        gum style --foreground="$C_WARN" "$(t err_no_dir): $target_dir"
+        sleep 2
+        return
+    }
+
+    clear
+    echo "$(t msg_starting)"
+    echo "  Dir: $target_dir"
+    [ -n "$PRESET_SUBJECT" ] && echo "  Subject: $PRESET_SUBJECT"
+    echo ""
+
+    claude "$@"
+    save_session
+}
+
+###############################################################################
 # Main
 ###############################################################################
 main() {
@@ -1407,11 +1488,7 @@ main() {
                 ;;
             # Menu actions
             n|N)
-                clear
-                echo "$(t msg_starting)"
-                echo ""
-                claude "$@"
-                save_session
+                start_new_session "$@"
                 ;;
             s|S)
                 if quick_resume; then
