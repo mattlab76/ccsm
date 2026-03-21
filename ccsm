@@ -41,11 +41,13 @@ fi
 declare -A L_EN L_DE
 
 L_EN[title]="Claude Code Session Manager"
-L_EN[menu_new]="[+] Start new session"
-L_EN[menu_resume]="[>] Browse / search sessions"
-L_EN[menu_delete]="[-] Delete session"
-L_EN[menu_stats]="[#] Statistics"
-L_EN[menu_quit]="[q] Quit"
+L_EN[menu_new]="Start new session"
+L_EN[menu_resume]="Browse / search sessions"
+L_EN[menu_delete]="Delete session"
+L_EN[menu_stats]="Statistics"
+L_EN[menu_quit]="Quit"
+L_EN[menu_recent]="Recent Sessions (enter 1-5 to resume)"
+L_EN[menu_action]="What would you like to do?"
 L_EN[msg_starting]="Starting new Claude session..."
 L_EN[msg_switching]="Switching to"
 L_EN[msg_resuming]="Resuming session"
@@ -78,11 +80,13 @@ L_EN[stats_none]="No sessions available."
 L_EN[confirm_yes]="y"
 
 L_DE[title]="Claude Code Session Manager"
-L_DE[menu_new]="[+] Neue Session starten"
-L_DE[menu_resume]="[>] Sessions anzeigen / suchen"
-L_DE[menu_delete]="[-] Session löschen"
-L_DE[menu_stats]="[#] Statistiken"
-L_DE[menu_quit]="[q] Beenden"
+L_DE[menu_new]="Neue Session starten"
+L_DE[menu_resume]="Sessions anzeigen / suchen"
+L_DE[menu_delete]="Session löschen"
+L_DE[menu_stats]="Statistiken"
+L_DE[menu_quit]="Beenden"
+L_DE[menu_recent]="Letzte Sessions (1-5 eingeben zum Fortsetzen)"
+L_DE[menu_action]="Was möchten Sie tun?"
 L_DE[msg_starting]="Starte neue Claude Session..."
 L_DE[msg_switching]="Wechsle nach"
 L_DE[msg_resuming]="Setze Session fort"
@@ -320,6 +324,66 @@ build_table() {
     TABLE_LINES+=("$(table_bottom)")
 }
 
+# Build compact table (only Total In/Out, no Last columns) for main menu
+build_table_compact() {
+    local max_items="${1:-0}"
+    TABLE_SIDS=()
+    local idx=0
+    local lines=()
+
+    if [ ! -s "$SESSION_LOG" ]; then
+        return
+    fi
+
+    # Compact column widths: wider subject/dir since no Last columns
+    local cw_num=3 cw_date=12
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 100)
+    local avail=$((cols - 16))
+    local cw_ti=$((avail * 9 / 100)); [ "$cw_ti" -lt 10 ] && cw_ti=10
+    local cw_to=$cw_ti
+    local remaining=$((avail - cw_num - cw_date - cw_ti - cw_to - 7))
+    local cw_subj=$((remaining * 55 / 100)); [ "$cw_subj" -lt 20 ] && cw_subj=20
+    local cw_dir=$((remaining - cw_subj)); [ "$cw_dir" -lt 16 ] && cw_dir=16
+
+    # Horizontal line helper
+    _hl() { local s=""; for ((i=0; i<$1; i++)); do s+="─"; done; echo -n "$s"; }
+
+    lines+=("$(printf '┌%s┬%s┬%s┬%s┬%s┬%s┐' "$(_hl $cw_num)" "$(_hl $cw_date)" "$(_hl $cw_subj)" "$(_hl $cw_dir)" "$(_hl $cw_ti)" "$(_hl $cw_to)")")
+    lines+=("$(printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│' \
+        $cw_num " #" $cw_date " Date" $cw_subj " Subject" $cw_dir " Directory" \
+        $cw_ti "Total In " $cw_to "Total Out")")
+    lines+=("$(printf '├%s┼%s┼%s┼%s┼%s┼%s┤' "$(_hl $cw_num)" "$(_hl $cw_date)" "$(_hl $cw_subj)" "$(_hl $cw_dir)" "$(_hl $cw_ti)" "$(_hl $cw_to)")")
+
+    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
+        idx=$((idx + 1))
+        TABLE_SIDS+=("$sid")
+
+        local short_betreff="${betreff:0:$((cw_subj - 2))}"
+        [ ${#betreff} -gt $((cw_subj - 2)) ] && short_betreff="${short_betreff}.."
+        local short_cwd="${cwd/#$HOME/\~}"
+        local short_cwd_d="${short_cwd:0:$((cw_dir - 2))}"
+        [ ${#short_cwd} -gt $((cw_dir - 2)) ] && short_cwd_d="..${short_cwd: -$((cw_dir - 4))}"
+
+        local tot_in="0" tot_out="0"
+        if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
+            local total_part="${tokens_col%%|*}"
+            tot_in=$(echo "$total_part" | cut -d/ -f1)
+            tot_out=$(echo "$total_part" | cut -d/ -f2)
+        fi
+
+        lines+=("$(printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│' \
+            $cw_num " $idx" $cw_date " $datum" $cw_subj " $short_betreff" $cw_dir " $short_cwd_d" \
+            $cw_ti "$(format_tokens "$tot_in") " $cw_to "$(format_tokens "$tot_out") ")")
+
+        [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
+    done < <(tac "$SESSION_LOG")
+
+    lines+=("$(printf '└%s┴%s┴%s┴%s┴%s┴%s┘' "$(_hl $cw_num)" "$(_hl $cw_date)" "$(_hl $cw_subj)" "$(_hl $cw_dir)" "$(_hl $cw_ti)" "$(_hl $cw_to)")")
+
+    COMPACT_TABLE_LINES=("${lines[@]}")
+}
+
 # Build plain rows for gum choose (no borders, just numbered rows for selection)
 build_choice_rows() {
     local max_items="${1:-0}"
@@ -449,24 +513,39 @@ show_main_menu() {
     local count=0
     [ -s "$SESSION_LOG" ] && count=$(wc -l < "$SESSION_LOG")
 
-    # Logo + menu in one box
-    local box_lines=()
-    box_lines+=("  ╔═╗ ╔═╗ ╔═╗ ╔╦╗   $(t title) v${CCSM_VERSION}        $count session(s)")
-    box_lines+=("  ║   ║   ╚═╗ ║║║")
-    box_lines+=("  ╚═╝ ╚═╝ ╚═╝ ╩ ╩")
-    box_lines+=("")
     # Doppelte Trennlinie
     local cols
     cols=$(tput cols 2>/dev/null || echo 80)
     local inner=$((cols < 60 ? 56 : cols - 8))
     local dline=""
     for ((i=0; i<inner; i++)); do dline+="═"; done
-    box_lines+=("$dline")
+
+    # Build box: header + sessions + menu
+    local box_lines=()
+    box_lines+=("  ╔═╗ ╔═╗ ╔═╗ ╔╦╗   $(t title) v${CCSM_VERSION}        $count session(s)")
+    box_lines+=("  ║   ║   ╚═╗ ║║║")
+    box_lines+=("  ╚═╝ ╚═╝ ╚═╝ ╩ ╩")
     box_lines+=("")
-    box_lines+=("  [1] $(t menu_new)")
-    box_lines+=("  [2] $(t menu_resume)")
-    box_lines+=("  [3] $(t menu_delete)")
-    box_lines+=("  [4] $(t menu_stats)")
+    box_lines+=("$dline")
+
+    # Recent sessions
+    if [ -s "$SESSION_LOG" ]; then
+        box_lines+=("  $(t menu_recent)")
+        box_lines+=("")
+        build_table_compact 5
+        for line in "${COMPACT_TABLE_LINES[@]}"; do
+            box_lines+=("  $line")
+        done
+        box_lines+=("")
+    fi
+
+    box_lines+=("$dline")
+    box_lines+=("  $(t menu_action)")
+    box_lines+=("")
+    box_lines+=("  [n] $(t menu_new)")
+    box_lines+=("  [s] $(t menu_resume)")
+    box_lines+=("  [d] $(t menu_delete)")
+    box_lines+=("  [i] $(t menu_stats)")
     box_lines+=("  [q] $(t menu_quit)")
 
     render_box "" "${box_lines[@]}"
@@ -1094,22 +1173,36 @@ main() {
         show_main_menu
 
         case "$MENU_CHOICE" in
-            1)
+            # Quick resume sessions 1-5
+            [1-5])
+                local idx=$((MENU_CHOICE - 1))
+                if [ "$idx" -lt "${#TABLE_SIDS[@]}" ]; then
+                    local sid="${TABLE_SIDS[$idx]}"
+                    local line
+                    line=$(grep "^${sid}	" "$SESSION_LOG")
+                    local r_cwd r_betreff
+                    r_cwd=$(echo "$line" | cut -f2)
+                    r_betreff=$(echo "$line" | cut -f3)
+                    resume_session "$sid" "$r_cwd" "$r_betreff" "$@"
+                fi
+                ;;
+            # Menu actions
+            n|N)
                 clear
                 echo "$(t msg_starting)"
                 echo ""
                 claude "$@"
                 save_session
                 ;;
-            2)
+            s|S)
                 if quick_resume; then
                     resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF" "$@"
                 fi
                 ;;
-            3)
+            d|D)
                 delete_session
                 ;;
-            4)
+            i|I)
                 show_stats
                 ;;
             q|Q|"")
