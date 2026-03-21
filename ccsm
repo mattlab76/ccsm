@@ -802,49 +802,60 @@ delete_session() {
 
     clear
 
-    # Show bordered table
     build_table 0
     local DELETE_SIDS=("${TABLE_SIDS[@]}")
+    local session_count=${#DELETE_SIDS[@]}
+
+    # Doppelte Trennlinie
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 80)
+    local binner=$((cols < 60 ? 56 : cols - 8))
+    local dline=""
+    for ((i=0; i<binner; i++)); do dline+="═"; done
 
     local box_lines=()
-    box_lines+=("  $(t delete_title)")
+    box_lines+=("  ${A_VIOLET}╔═╗ ╔═╗ ╔═╗ ╔╦╗${A_RST}   ${A_BOLD}$(t delete_title)${A_RST}        ${A_DIM}${session_count} session(s)${A_RST}")
+    box_lines+=("  ${A_VIOLET}║   ║   ╚═╗ ║║║${A_RST}")
+    box_lines+=("  ${A_VIOLET}╚═╝ ╚═╝ ╚═╝ ╩ ╩${A_RST}")
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_TEAL}${A_BOLD}$(t delete_title)${A_RST}")
     box_lines+=("")
     for line in "${TABLE_LINES[@]}"; do
         box_lines+=("  $line")
     done
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_TEAL}${A_BOLD}$(t menu_action)${A_RST}")
+    box_lines+=("")
+    box_lines+=("  ${A_GREEN}[1-${session_count}]${A_RST} Enter number(s) to delete (comma-separated: 1,3,5)")
+    box_lines+=("  ${A_GREEN}[q]${A_RST}     Back")
+
     render_box "" "${box_lines[@]}"
     echo ""
+    echo -n "  > "; read -r del_input
 
-    # Build choice rows
-    local choose_items=()
-    while IFS= read -r row; do
-        [ -n "$row" ] && choose_items+=("$row")
-    done < <(build_choice_rows 0)
+    case "$del_input" in
+        q|Q|"") return ;;
+    esac
 
-    [ ${#choose_items[@]} -eq 0 ] && return
-
-    local choices
-    choices=$(printf '%s\n' "${choose_items[@]}" | \
-        gum choose --no-limit \
-            --header="↑↓ navigate · Space toggle · Enter delete · ESC cancel") || return
-
-    [ -z "$choices" ] && return
-
-    # Collect sids to delete
+    # Parse comma-separated numbers
     local delete_sids=()
-    while IFS= read -r selected; do
-        local sel_num
-        sel_num=$(echo "$selected" | awk '{print $1}')
-        local idx=$((sel_num - 1))
-        if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#DELETE_SIDS[@]}" ]; then
+    IFS=',' read -ra nums <<< "$del_input"
+    for num in "${nums[@]}"; do
+        num=$(echo "$num" | tr -d ' ')
+        local idx=$((num - 1))
+        if [ "$idx" -ge 0 ] && [ "$idx" -lt "$session_count" ]; then
             delete_sids+=("${DELETE_SIDS[$idx]}")
         fi
-    done <<< "$choices"
+    done
 
     [ ${#delete_sids[@]} -eq 0 ] && return
 
     # Confirm
-    gum confirm "$(t delete_confirm) (${#delete_sids[@]} selected)" || return
+    echo ""
+    echo -n "  $(t delete_confirm) (${#delete_sids[@]} selected) [y/n]: "; read -r confirm
+    [[ "${confirm,,}" != "y" ]] && [[ "${confirm,,}" != "j" ]] && return
 
     # Delete from log
     local tmplog="${SESSION_LOG}.tmp"
@@ -865,7 +876,7 @@ delete_session() {
     if [ "$del_count" -gt 0 ]; then
         local msg
         printf -v msg "$(t cleanup_done)" "$del_count"
-        gum style --foreground="$C_ACCENT" "  ✓ $msg"
+        echo -e "  ${A_GREEN}✓ ${msg}${A_RST}"
         sleep 1
     fi
 }
@@ -913,9 +924,10 @@ show_stats() {
     local total_in=0 total_out=0
     while IFS=$'\t' read -r _ _ _ _ _ tk; do
         if [ -n "$tk" ] && [ "$tk" != "0/0" ]; then
+            local total_part="${tk%%|*}"
             local t_in t_out
-            t_in=$(echo "$tk" | cut -d/ -f1)
-            t_out=$(echo "$tk" | cut -d/ -f2)
+            t_in=$(echo "$total_part" | cut -d/ -f1)
+            t_out=$(echo "$total_part" | cut -d/ -f2)
             total_in=$((total_in + t_in))
             total_out=$((total_out + t_out))
         fi
@@ -927,8 +939,7 @@ show_stats() {
 
     # Top directories
     local top_dirs
-    top_dirs=$(cut -f2 "$SESSION_LOG" | sed "s|$HOME|~|g" | sort | uniq -c | sort -rn | head -5 | \
-        awk '{printf "  %dx %s\n", $1, $2}')
+    top_dirs=$(cut -f2 "$SESSION_LOG" | sed "s|$HOME|~|g" | sort | uniq -c | sort -rn | head -5)
 
     # Top tags
     local top_tags
@@ -937,55 +948,69 @@ show_stats() {
     # Build session table
     build_table 0
 
-    # Separator line for sections
-    local sep
-    printf -v sep '%s' "$(printf '%.0s─' {1..90})"
+    # Doppelte Trennlinie
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 80)
+    local binner=$((cols < 60 ? 56 : cols - 8))
+    local dline=""
+    for ((i=0; i<binner; i++)); do dline+="═"; done
 
-    # Build box content
+    # Build box
     local box_lines=()
-    box_lines+=("  $(t stats_title)")
+    box_lines+=("  ${A_VIOLET}╔═╗ ╔═╗ ╔═╗ ╔╦╗${A_RST}   ${A_BOLD}$(t stats_title)${A_RST}        ${A_DIM}${total} session(s)${A_RST}")
+    box_lines+=("  ${A_VIOLET}║   ║   ╚═╗ ║║║${A_RST}")
+    box_lines+=("  ${A_VIOLET}╚═╝ ╚═╝ ╚═╝ ╩ ╩${A_RST}")
     box_lines+=("")
-    box_lines+=("  Version:      ${CCSM_VERSION}")
-    box_lines+=("  Sessions:     ${total}")
-    box_lines+=("  Oldest:       ${oldest}")
-    box_lines+=("  Newest:       ${newest}")
-    box_lines+=("  Cleanup:      ${CLEANUP_DAYS} days")
-    box_lines+=("  Tokens in:    ${fmt_total_in}")
-    box_lines+=("  Tokens out:   ${fmt_total_out}")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_TEAL}${A_BOLD}Overview${A_RST}")
     box_lines+=("")
-    box_lines+=("  $sep")
-    box_lines+=("  Top directories:")
+    box_lines+=("  Version:       ${A_BOLD}${CCSM_VERSION}${A_RST}")
+    box_lines+=("  Sessions:      ${A_BOLD}${total}${A_RST}")
+    box_lines+=("  Oldest:        ${oldest}")
+    box_lines+=("  Newest:        ${newest}")
+    box_lines+=("  Cleanup:       ${CLEANUP_DAYS} days")
+    box_lines+=("  Tokens in:     ${A_BOLD}${fmt_total_in}${A_RST}")
+    box_lines+=("  Tokens out:    ${A_BOLD}${fmt_total_out}${A_RST}")
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_TEAL}${A_BOLD}Top Directories${A_RST}")
+    box_lines+=("")
     if [ -n "$top_dirs" ]; then
-        while IFS= read -r dline; do
-            box_lines+=("  $dline")
+        while IFS= read -r dline_item; do
+            local cnt dir
+            cnt=$(echo "$dline_item" | awk '{print $1}')
+            dir=$(echo "$dline_item" | awk '{print $2}')
+            box_lines+=("  ${A_GREEN}${cnt}x${A_RST}  ${dir}")
         done <<< "$top_dirs"
     fi
 
     if [ -n "$top_tags" ]; then
         box_lines+=("")
-        box_lines+=("  $sep")
-        box_lines+=("  Top tags:")
+        box_lines+=("$dline")
+        box_lines+=("  ${A_TEAL}${A_BOLD}Top Tags${A_RST}")
+        box_lines+=("")
         while IFS= read -r tline; do
-            local formatted
-            formatted=$(echo "$tline" | awk '{printf "  %s (%dx)\n", $2, $1}')
-            box_lines+=("  $formatted")
+            local cnt tag
+            cnt=$(echo "$tline" | awk '{print $1}')
+            tag=$(echo "$tline" | awk '{print $2}')
+            box_lines+=("  ${A_VIOLET}${tag}${A_RST} (${cnt}x)")
         done <<< "$top_tags"
     fi
 
     box_lines+=("")
-    box_lines+=("  $sep")
-    box_lines+=("  All sessions:")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_TEAL}${A_BOLD}All Sessions${A_RST}")
     box_lines+=("")
     for line in "${TABLE_LINES[@]}"; do
         box_lines+=("  $line")
     done
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_GREEN}[q]${A_RST} Back")
 
     render_box "" "${box_lines[@]}"
     echo ""
-    gum style --foreground="$C_DIM" --margin="0 2" \
-        "  Enter back"
-    echo ""
-    gum confirm "OK" --affirmative="Back" --negative="" 2>/dev/null || true
+    echo -n "  > "; read -r
 }
 
 ###############################################################################
