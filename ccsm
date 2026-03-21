@@ -449,31 +449,16 @@ show_main_menu() {
     local count=0
     [ -s "$SESSION_LOG" ] && count=$(wc -l < "$SESSION_LOG")
 
-    # Build box content
+    # Build box content: logo + menu inside one box
     local box_lines=()
     box_lines+=("  ╔═╗ ╔═╗ ╔═╗ ╔╦╗   $(t title) v${CCSM_VERSION}        $count session(s)")
     box_lines+=("  ║   ║   ╚═╗ ║║║")
     box_lines+=("  ╚═╝ ╚═╝ ╚═╝ ╩ ╩")
-    box_lines+=("")
-
-    if [ -s "$SESSION_LOG" ]; then
-        build_table 5
-        for line in "${TABLE_LINES[@]}"; do
-            box_lines+=("  $line")
-        done
-    else
-        box_lines+=("  $(t sessions_none)")
-    fi
 
     render_box "" "${box_lines[@]}"
     echo ""
 
-    # Navigation hint below box
-    gum style --foreground="$C_DIM" --margin="0 2" \
-        "  ↑↓ navigate · Enter select · ESC quit"
-    echo ""
-
-    # Menu choices
+    # Menu choices inside gum choose (renders its own visual)
     local choices=()
     choices+=("$(t menu_new)")
     choices+=("$(t menu_resume)")
@@ -482,7 +467,7 @@ show_main_menu() {
     choices+=("$(t menu_quit)")
 
     MENU_CHOICE=$(printf '%s\n' "${choices[@]}" | \
-        gum choose --height=7) || MENU_CHOICE="$(t menu_quit)"
+        gum choose --header="↑↓ navigate · Enter select · ESC quit" --height=8) || MENU_CHOICE="$(t menu_quit)"
 }
 
 ###############################################################################
