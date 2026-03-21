@@ -439,14 +439,36 @@ build_choice_rows() {
 render_box() {
     local title="$1"
     shift
-    # All remaining args are content lines
-    gum style \
-        --foreground="$C_PRIMARY" \
-        --border="rounded" \
-        --border-foreground="$C_SECONDARY" \
-        --padding="1 2" \
-        --margin="0 1" \
-        "$title" "$@"
+    # Manual box drawing with echo -e to support ANSI colors in content
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 100)
+    local inner=$((cols - 6))
+    [ "$inner" -lt 60 ] && inner=60
+
+    # Top border
+    local hline=""
+    for ((i=0; i<inner; i++)); do hline+="─"; done
+    echo -e "  ${A_TEAL}╭${hline}╮${A_RST}"
+
+    # Empty line
+    printf "  ${A_TEAL}│${A_RST}%-${inner}s${A_TEAL}│${A_RST}\n" ""
+
+    # Content lines
+    for line in "$@"; do
+        # Strip ANSI codes to calculate visible length for padding
+        local visible
+        visible=$(echo -e "$line" | sed 's/\x1b\[[0-9;]*m//g')
+        local vlen=${#visible}
+        local pad=$((inner - vlen))
+        [ "$pad" -lt 0 ] && pad=0
+        printf "  ${A_TEAL}│${A_RST} %b%${pad}s${A_TEAL}│${A_RST}\n" "$line" ""
+    done
+
+    # Empty line
+    printf "  ${A_TEAL}│${A_RST}%-${inner}s${A_TEAL}│${A_RST}\n" ""
+
+    # Bottom border
+    echo -e "  ${A_TEAL}╰${hline}╯${A_RST}"
 }
 
 ###############################################################################
