@@ -615,45 +615,157 @@ quick_resume() {
 
     clear
 
-    # Show bordered table
+    # Build full table
     build_table 0
     local CHOICE_SIDS=("${TABLE_SIDS[@]}")
+    local session_count=${#CHOICE_SIDS[@]}
 
+    # Doppelte Trennlinie
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 80)
+    local binner=$((cols < 60 ? 56 : cols - 8))
+    local dline=""
+    for ((i=0; i<binner; i++)); do dline+="═"; done
+
+    # Build box
     local box_lines=()
-    box_lines+=("  $(t menu_resume)        ${#CHOICE_SIDS[@]} session(s)")
+    box_lines+=("  ${A_VIOLET}╔═╗ ╔═╗ ╔═╗ ╔╦╗${A_RST}   ${A_BOLD}$(t menu_resume)${A_RST}        ${A_DIM}${session_count} session(s)${A_RST}")
+    box_lines+=("  ${A_VIOLET}║   ║   ╚═╗ ║║║${A_RST}")
+    box_lines+=("  ${A_VIOLET}╚═╝ ╚═╝ ╚═╝ ╩ ╩${A_RST}")
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_TEAL}${A_BOLD}$(t menu_resume)${A_RST}")
     box_lines+=("")
     for line in "${TABLE_LINES[@]}"; do
         box_lines+=("  $line")
     done
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_TEAL}${A_BOLD}$(t menu_action)${A_RST}")
+    box_lines+=("")
+    box_lines+=("  ${A_GREEN}[1-${session_count}]${A_RST} $(t msg_resuming)")
+    box_lines+=("  ${A_GREEN}[/]${A_RST}     $(t search_prompt)")
+    box_lines+=("  ${A_GREEN}[q]${A_RST}     $(t menu_quit)")
 
     render_box "" "${box_lines[@]}"
     echo ""
+    echo -n "  > "; read -r browse_input
 
-    # Build choice rows for gum choose
-    local choose_items=()
-    while IFS= read -r row; do
-        [ -n "$row" ] && choose_items+=("$row")
-    done < <(build_choice_rows 0)
+    case "$browse_input" in
+        q|Q|"") return 1 ;;
+        /*)
+            # Search with the text after /
+            local query="${browse_input#/}"
+            [ -z "$query" ] && { query=$(gum input --placeholder="$(t search_prompt)...") || return 1; }
+            _search_and_resume "$query" "${CHOICE_SIDS[@]}"
+            return $?
+            ;;
+        [0-9]*)
+            local idx=$((browse_input - 1))
+            if [ "$idx" -ge 0 ] && [ "$idx" -lt "$session_count" ]; then
+                local sid="${CHOICE_SIDS[$idx]}"
+                local line
+                line=$(grep "^${sid}	" "$SESSION_LOG")
+                SELECTED_SID=$(echo "$line" | cut -f1)
+                SELECTED_CWD=$(echo "$line" | cut -f2)
+                SELECTED_BETREFF=$(echo "$line" | cut -f3)
+                return 0
+            fi
+            return 1
+            ;;
+        *) return 1 ;;
+    esac
+}
 
-    [ ${#choose_items[@]} -eq 0 ] && return 1
+# Internal: search and select from results
+_search_and_resume() {
+    local query="$1"
+    shift
 
-    local choice
-    choice=$(printf '%s\n' "${choose_items[@]}" | \
-        gum choose --header="↑↓ navigate · Enter resume · ESC back") || return 1
+    local SEARCH_SIDS=()
+    local search_table_lines=()
+    local idx=0
 
-    local sel_num
-    sel_num=$(echo "$choice" | awk '{print $1}')
-    local idx=$((sel_num - 1))
+    search_table_lines+=("$(table_top)")
+    search_table_lines+=("$(table_header_row)")
+    search_table_lines+=("$(table_mid)")
 
-    [ "$idx" -lt 0 ] || [ "$idx" -ge "${#CHOICE_SIDS[@]}" ] && return 1
+    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
+        if echo "$betreff $cwd $tags" | grep -qi "$query"; then
+            idx=$((idx + 1))
+            SEARCH_SIDS+=("$sid")
 
-    local sid="${CHOICE_SIDS[$idx]}"
-    local line
-    line=$(grep "^${sid}	" "$SESSION_LOG")
-    SELECTED_SID=$(echo "$line" | cut -f1)
-    SELECTED_CWD=$(echo "$line" | cut -f2)
-    SELECTED_BETREFF=$(echo "$line" | cut -f3)
-    return 0
+            local short_betreff="${betreff:0:$((_W_SUBJ - 2))}"
+            [ ${#betreff} -gt $((_W_SUBJ - 2)) ] && short_betreff="${short_betreff}.."
+            local short_cwd="${cwd/#$HOME/\~}"
+            local short_cwd_d="${short_cwd:0:$((_W_DIR - 2))}"
+            [ ${#short_cwd} -gt $((_W_DIR - 2)) ] && short_cwd_d="..${short_cwd: -$((_W_DIR - 4))}"
+
+            local tot_in="0" tot_out="0" last_in="0" last_out="0"
+            if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
+                local total_part="${tokens_col%%|*}"
+                local last_part="${tokens_col#*|}"
+                [ "$last_part" = "$tokens_col" ] && last_part="$total_part"
+                tot_in=$(echo "$total_part" | cut -d/ -f1)
+                tot_out=$(echo "$total_part" | cut -d/ -f2)
+                last_in=$(echo "$last_part" | cut -d/ -f1)
+                last_out=$(echo "$last_part" | cut -d/ -f2)
+            fi
+
+            search_table_lines+=("$(table_data_row "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+                "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
+                "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")")
+        fi
+    done < <(tac "$SESSION_LOG")
+
+    if [ ${#SEARCH_SIDS[@]} -eq 0 ]; then
+        gum style --foreground="$C_WARN" "$(t search_no_results)"
+        sleep 1
+        return 1
+    fi
+
+    search_table_lines+=("$(table_bottom)")
+
+    clear
+
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 80)
+    local binner=$((cols < 60 ? 56 : cols - 8))
+    local dline=""
+    for ((i=0; i<binner; i++)); do dline+="═"; done
+
+    local box_lines=()
+    box_lines+=("  ${A_TEAL}${A_BOLD}$(t search_title): '${query}'${A_RST}        ${A_DIM}${#SEARCH_SIDS[@]} result(s)${A_RST}")
+    box_lines+=("")
+    for line in "${search_table_lines[@]}"; do
+        box_lines+=("  $line")
+    done
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_GREEN}[1-${#SEARCH_SIDS[@]}]${A_RST} $(t msg_resuming)")
+    box_lines+=("  ${A_GREEN}[q]${A_RST}     $(t menu_quit)")
+
+    render_box "" "${box_lines[@]}"
+    echo ""
+    echo -n "  > "; read -r sel
+
+    case "$sel" in
+        q|Q|"") return 1 ;;
+        [0-9]*)
+            local sidx=$((sel - 1))
+            if [ "$sidx" -ge 0 ] && [ "$sidx" -lt "${#SEARCH_SIDS[@]}" ]; then
+                local sid="${SEARCH_SIDS[$sidx]}"
+                local line
+                line=$(grep "^${sid}	" "$SESSION_LOG")
+                SELECTED_SID=$(echo "$line" | cut -f1)
+                SELECTED_CWD=$(echo "$line" | cut -f2)
+                SELECTED_BETREFF=$(echo "$line" | cut -f3)
+                return 0
+            fi
+            return 1
+            ;;
+        *) return 1 ;;
+    esac
 }
 
 ###############################################################################
@@ -765,97 +877,20 @@ search_sessions() {
     local query="$1"
 
     if [ ! -s "$SESSION_LOG" ]; then
-        gum style --foreground="$C_WARN" "$(t search_no_sessions)"
-        sleep 1
+        echo "$(t search_no_sessions)"
         return 1
     fi
 
     if [ -z "$query" ]; then
-        query=$(gum input \
-            --placeholder="$(t search_prompt)..." \
-            ) || return 1
+        query=$(gum input --placeholder="$(t search_prompt)...") || return 1
         [ -z "$query" ] && return 1
     fi
 
-    # Search and collect matching sids
-    local SEARCH_SIDS=()
-    local search_choose=()
-    local search_table_lines=()
-    local idx=0
-
-    search_table_lines+=("$(table_top)")
-    search_table_lines+=("$(table_header_row)")
-    search_table_lines+=("$(table_mid)")
-
-    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
-        if echo "$betreff $cwd $tags" | grep -qi "$query"; then
-            idx=$((idx + 1))
-            SEARCH_SIDS+=("$sid")
-
-            local short_cwd="${cwd/#$HOME/\~}"
-            local short_betreff="${betreff:0:$((_W_SUBJ - 2))}"
-            [ ${#betreff} -gt $((_W_SUBJ - 2)) ] && short_betreff="${short_betreff}.."
-            local short_cwd_d="${short_cwd:0:$((_W_DIR - 2))}"
-            [ ${#short_cwd} -gt $((_W_DIR - 2)) ] && short_cwd_d="..${short_cwd: -$((_W_DIR - 4))}"
-
-            local tot_in="0" tot_out="0" last_in="0" last_out="0"
-            if [ -n "$tokens_col" ] && [ "$tokens_col" != "0/0" ]; then
-                local total_part="${tokens_col%%|*}"
-                local last_part="${tokens_col#*|}"
-                [ "$last_part" = "$tokens_col" ] && last_part="$total_part"
-                tot_in=$(echo "$total_part" | cut -d/ -f1)
-                tot_out=$(echo "$total_part" | cut -d/ -f2)
-                last_in=$(echo "$last_part" | cut -d/ -f1)
-                last_out=$(echo "$last_part" | cut -d/ -f2)
-            fi
-
-            search_table_lines+=("$(table_data_row "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
-                "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
-                "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")")
-
-            printf -v row "%-3s %-12s %-20s %-16s %7s %7s" \
-                "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
-                "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")"
-            search_choose+=("$row")
-        fi
-    done < <(tac "$SESSION_LOG")
-
-    if [ ${#SEARCH_SIDS[@]} -eq 0 ]; then
-        gum style --foreground="$C_WARN" "$(t search_no_results)"
-        sleep 1
-        return 1
+    # Use the shared search function
+    _search_and_resume "$query"
+    if [ $? -eq 0 ]; then
+        resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF"
     fi
-
-    search_table_lines+=("$(table_bottom)")
-
-    clear
-
-    local box_lines=()
-    box_lines+=("  $(t search_title): '$query' (${#SEARCH_SIDS[@]})")
-    box_lines+=("")
-    for line in "${search_table_lines[@]}"; do
-        box_lines+=("  $line")
-    done
-    render_box "" "${box_lines[@]}"
-    echo ""
-
-    local choice
-    choice=$(printf '%s\n' "${search_choose[@]}" | \
-        gum choose --header="↑↓ navigate · Enter resume · ESC back") || return 1
-
-    local sel_num
-    sel_num=$(echo "$choice" | awk '{print $1}')
-    local sel_idx=$((sel_num - 1))
-
-    [ "$sel_idx" -lt 0 ] || [ "$sel_idx" -ge "${#SEARCH_SIDS[@]}" ] && return 1
-
-    local sid="${SEARCH_SIDS[$sel_idx]}"
-    local line
-    line=$(grep "^${sid}	" "$SESSION_LOG")
-    SELECTED_SID=$(echo "$line" | cut -f1)
-    SELECTED_CWD=$(echo "$line" | cut -f2)
-    SELECTED_BETREFF=$(echo "$line" | cut -f3)
-    resume_session "$SELECTED_SID" "$SELECTED_CWD" "$SELECTED_BETREFF"
 }
 
 ###############################################################################
