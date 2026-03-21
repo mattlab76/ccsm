@@ -241,16 +241,11 @@ ask_yn() {
     local yes_char
     yes_char=$(t confirm_yes)
     echo -ne "  ${A_BOLD}${question}${A_RST} ${A_GREEN}[${yes_char}/n]${A_RST} "
-    # Save terminal state, read single char, restore terminal state
-    local old_tty
-    old_tty=$(stty -g 2>/dev/null)
-    stty raw -echo 2>/dev/null
-    ANSWER=$(dd bs=1 count=1 2>/dev/null)
-    stty "$old_tty" 2>/dev/null
-    echo ""  # newline after single char
+    read -r -n 1 ANSWER
+    echo ""
     ANSWER="${ANSWER,,}"
-    # Treat Enter (empty/carriage return) as yes
-    [[ -z "$ANSWER" ]] || [[ "$ANSWER" == $'\r' ]] || [[ "$ANSWER" == $'\n' ]] && ANSWER="$yes_char"
+    # Treat Enter (empty) as yes
+    [ -z "$ANSWER" ] && ANSWER="$yes_char"
 }
 
 # ask_input "Label" "default" → sets ANSWER
@@ -276,7 +271,7 @@ ask_path() {
     else
         echo -e "  ${label}"
     fi
-    echo -n "  > "; read -r ANSWER
+    echo -n "  > "; read -e -r ANSWER
     [ -z "$ANSWER" ] && ANSWER="$default"
 }
 
