@@ -10,7 +10,7 @@ A terminal-based session manager for [Claude Code](https://docs.anthropic.com/en
 
 ## Screenshot
 
-![ccsm main menu](screenShots/Bildschirmfoto_20260321_180913.png)
+![ccsm main menu](assets/main-menu.png)
 
 ---
 
