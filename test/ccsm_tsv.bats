@@ -50,8 +50,8 @@ setup() {
     build_table 0
     local table_output
     table_output=$(printf '%s\n' "${TABLE_LINES[@]}")
-    [[ "$table_output" == *"Erstes Projekt"* ]]
-    [[ "$table_output" == *"Fuenftes Projekt"* ]]
+    [[ "$table_output" == *"Erstes"* ]]
+    [[ "$table_output" == *"Fuenftes"* ]]
 }
 
 @test "build_table: Sessions in umgekehrter Reihenfolge" {

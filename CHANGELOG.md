@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.6.0] - 2026-03-22
+
+### Added
+- **Settings menu** `[c]` — Language, cleanup days, log retention configurable from TUI
+- **Activity Log** `[l]` — Color-coded log viewer (NEW, RESUME, SAVE, DELETE, CLEANUP, SETTINGS)
+- **Log rotation** — Configurable retention (default 90 days, `LOG_DAYS` setting)
+- **Date + time** — Sessions now store `YYYY-MM-DD HH:MM` (legacy entries show `00:01`)
+- **Session validation** — Checks if sessions still exist at Claude Code (JSONL in `~/.claude/projects/`)
+- **Status markers** in all tables: `[!]` red = expired at Claude Code, `[?]` amber = directory missing
+- **Legend** — Shown below tables only when marked sessions exist
+- **Startup check** — Detects invalid sessions, lists details, offers auto-purge or dismiss
+- **Dismissed list** — Previously dismissed invalid sessions are not asked again
+- **Resume: dir missing** — Options: recreate directory, delete session, or cancel
+- **Resume: session expired** — Options: start new session (same subject+dir), delete, or keep
+- **"No conversation found" detection** — Catches Claude Code's error and offers recovery options
+- **Installer update detection** — Skips language selection, shows restart hint
+- **Manual test plan** — `test/MANUAL_TESTPLAN.md` with 100+ test points
+- **12 new automated tests** (total: 104) — ccsm_log, _rotate_log, _save_config, lookup_sid, days_since with time
+
+### Changed
+- Resumed sessions move to end of TSV (appear at top of "recent" list)
+- `is_session_valid` results are cached (`_VALID_CACHE`) for performance
+- `ask_path` simplified to alias for `ask_input` (tab completion was removed in v1.5.0)
+- `_do_expired_delete` deduplicated (was copy-pasted twice)
+- Claude output captured via temp file instead of RAM variable
+- `sed -i` replaced with portable `grep + mv` for macOS compatibility
+- ANSWER input sanitized (`tr -d '\r'`) to fix stty sane artifacts
+- Status markers unified to ASCII `[!]`/`[?]` (Unicode symbols caused column misalignment)
+- Help text updated: `MAX_SESSIONS` replaced with `LOG_DAYS`
+
+### Removed
+- Unused translations: `err_no_dir`, `expired_mark`
+- Dead code: duplicate `row_color` assignment
+- `MAX_SESSIONS` references in help text
+
 ## [1.5.0] - 2026-03-21
 
 ### Added

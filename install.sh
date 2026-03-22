@@ -18,36 +18,51 @@ RED='\033[31m'
 CYAN='\033[36m'
 RESET='\033[0m'
 
-# Language detection — interactive during install
-DETECTED_LOCALE="${CCSM_LANG:-${LC_ALL:-${LANG:-}}}"
+# Detect if this is an update or fresh install
+INSTALL_DIR="${HOME}/.local/bin"
+CONFIG_FILE="${HOME}/.claude/ccsm.conf"
+IS_UPDATE=false
+if command -v ccsm &>/dev/null || [ -f "$INSTALL_DIR/ccsm" ]; then
+    IS_UPDATE=true
+fi
+
+# Language detection
 L="en"
 CCSM_LANG_SETTING=""
 
-case "$DETECTED_LOCALE" in
-    de*)
-        echo -e "${BOLD}Sprache / Language${RESET}"
-        echo -e "  Deutsche Locale erkannt (${DETECTED_LOCALE})"
-        echo -ne "  ${BOLD}Deutsche Sprache verwenden?${RESET} [j/n] "
-        read -r -n 1 lang_choice
-        echo ""
-        if [[ "${lang_choice,,}" == "j" ]] || [[ -z "$lang_choice" ]]; then
-            L="de"
-            CCSM_LANG_SETTING="de"
-        else
+if $IS_UPDATE && [ -f "$CONFIG_FILE" ]; then
+    # Update: read language from existing config
+    CCSM_LANG_SETTING=$(grep -E '^CCSM_LANG=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 | tr -d ' ')
+    [ "$CCSM_LANG_SETTING" = "de" ] && L="de"
+else
+    # Fresh install: ask interactively
+    DETECTED_LOCALE="${CCSM_LANG:-${LC_ALL:-${LANG:-}}}"
+    case "$DETECTED_LOCALE" in
+        de*)
+            echo -e "${BOLD}Sprache / Language${RESET}"
+            echo -e "  Deutsche Locale erkannt (${DETECTED_LOCALE})"
+            echo -ne "  ${BOLD}Deutsche Sprache verwenden?${RESET} [j/n] "
+            read -r -n 1 lang_choice
+            echo ""
+            if [[ "${lang_choice,,}" == "j" ]] || [[ -z "$lang_choice" ]]; then
+                L="de"
+                CCSM_LANG_SETTING="de"
+            else
+                CCSM_LANG_SETTING="en"
+            fi
+            echo ""
+            ;;
+        en*)
             CCSM_LANG_SETTING="en"
-        fi
-        echo ""
-        ;;
-    en*)
-        CCSM_LANG_SETTING="en"
-        ;;
-    *)
-        echo -e "${YELLOW}Note: Your locale (${DETECTED_LOCALE}) is not supported.${RESET}"
-        echo -e "  ccsm supports English and German. Using English (default)."
-        echo ""
-        CCSM_LANG_SETTING="en"
-        ;;
-esac
+            ;;
+        *)
+            echo -e "${YELLOW}Note: Your locale (${DETECTED_LOCALE}) is not supported.${RESET}"
+            echo -e "  ccsm supports English and German. Using English (default)."
+            echo ""
+            CCSM_LANG_SETTING="en"
+            ;;
+    esac
+fi
 
 # Translations
 if [[ "$L" == "de" ]]; then
@@ -58,6 +73,8 @@ if [[ "$L" == "de" ]]; then
     T_MISSING_INSTALL="Bitte die fehlenden Pakete installieren bevor ccsm genutzt werden kann."
     T_MISSING_CONTINUE="Trotzdem fortfahren? [j/n]"
     T_MISSING_ABORT="Installation abgebrochen."
+    T_UPDATE_DETECTED="ccsm ist bereits installiert — wird aktualisiert."
+    T_UPDATE_RESTART="Hinweis: Falls ccsm gerade läuft, bitte beenden und neu starten damit die Änderungen wirksam werden."
     T_INSTALLING="Installiere ccsm..."
     T_CONFIG_HOOK="Konfiguriere Claude Code Hook..."
     T_HOOK_EXISTS="Hook bereits in settings.json vorhanden"
@@ -79,6 +96,8 @@ else
     T_MISSING_INSTALL="Please install the missing packages before using ccsm."
     T_MISSING_CONTINUE="Continue anyway? [y/n]"
     T_MISSING_ABORT="Installation cancelled."
+    T_UPDATE_DETECTED="ccsm is already installed — updating."
+    T_UPDATE_RESTART="Note: If ccsm is currently running, please quit and restart it for changes to take effect."
     T_INSTALLING="Installing ccsm..."
     T_CONFIG_HOOK="Configuring Claude Code hook..."
     T_HOOK_EXISTS="Hook already in settings.json"
@@ -95,11 +114,9 @@ else
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-INSTALL_DIR="${HOME}/.local/bin"
 HOOK_DIR="${HOME}/.claude/hooks"
 COMPLETION_DIR_ZSH="${HOME}/.local/share/zsh/site-functions"
 SETTINGS_FILE="${HOME}/.claude/settings.json"
-CONFIG_FILE="${HOME}/.claude/ccsm.conf"
 
 echo -e "${BOLD}${T_TITLE}${RESET}"
 echo ""
@@ -171,6 +188,12 @@ if [ ${#MISSING[@]} -gt 0 ]; then
         exit 1
     fi
     echo ""
+fi
+
+# Show update notice
+if $IS_UPDATE; then
+    echo ""
+    echo -e "${YELLOW}${T_UPDATE_DETECTED}${RESET}"
 fi
 
 echo ""
@@ -252,6 +275,10 @@ fi
 echo ""
 if echo "$PATH" | tr ':' '\n' | grep -q "$INSTALL_DIR"; then
     echo -e "${GREEN}${BOLD}${T_DONE}${RESET}"
+    if $IS_UPDATE; then
+        echo ""
+        echo -e "${YELLOW}${T_UPDATE_RESTART}${RESET}"
+    fi
     echo ""
     echo -e "${T_START}: ${CYAN}ccsm${RESET}"
 else

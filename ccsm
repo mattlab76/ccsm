@@ -19,17 +19,20 @@ if ((BASH_VERSINFO[0] < 4)); then
     exit 1
 fi
 
-CCSM_VERSION="1.5.0"
+CCSM_VERSION="1.6.0"
 CCSM_OS="$(uname -s)"
 
 # Paths
 SESSION_LOG="$HOME/.claude/session_log.tsv"
 CONFIG_FILE="$HOME/.claude/ccsm.conf"
 TOKENS_TOTAL_FILE="$HOME/.claude/ccsm_tokens_total"
+CCSM_LOG="$HOME/.claude/ccsm.log"
+CCSM_DISMISSED="$HOME/.claude/ccsm_dismissed"
 CCSM_TMPDIR="/tmp/ccsm"
 
 # Defaults
 CLEANUP_DAYS=30
+LOG_DAYS=90
 CCSM_LANG="${CCSM_LANG:-}"
 
 # Load config (only allow known variables)
@@ -41,6 +44,7 @@ if [ -f "$CONFIG_FILE" ]; then
         val="${val## }"; val="${val%% }" # trim
         case "$key" in
             CLEANUP_DAYS) CLEANUP_DAYS="$val" ;;
+            LOG_DAYS)     LOG_DAYS="$val" ;;
             CCSM_LANG)    CCSM_LANG="$val" ;;
         esac
     done < "$CONFIG_FILE"
@@ -77,7 +81,6 @@ L_EN[new_dir_created]="Directory created."
 L_EN[msg_switching]="Switching to"
 L_EN[msg_resuming]="Resuming session"
 L_EN[err_no_claude]="Error: Claude Code is not installed or not in PATH."
-L_EN[err_no_dir]="Directory no longer exists"
 L_EN[sessions_none]="No saved sessions."
 L_EN[save_title]="Save Session"
 L_EN[save_want]="Save this session?"
@@ -116,6 +119,33 @@ L_EN[stats_overview]="Overview"
 L_EN[stats_top_dirs]="Top Directories"
 L_EN[stats_top_tags]="Top Tags"
 L_EN[stats_all_sessions]="All Sessions"
+L_EN[menu_settings]="Settings"
+L_EN[settings_title]="Settings"
+L_EN[settings_lang]="Language"
+L_EN[settings_lang_current]="Current"
+L_EN[settings_lang_prompt]="Choose language (en/de):"
+L_EN[settings_cleanup]="Cleanup days"
+L_EN[settings_cleanup_current]="Current"
+L_EN[settings_cleanup_prompt]="Days until session is old (0=disabled):"
+L_EN[settings_log_days]="Log retention (days)"
+L_EN[settings_log_days_prompt]="Days to keep log entries (0=disabled):"
+L_EN[settings_saved]="Settings saved."
+L_EN[settings_invalid]="Invalid input, keeping current value."
+L_EN[menu_log]="Activity Log"
+L_EN[log_title]="Activity Log"
+L_EN[log_empty]="No log entries."
+L_EN[dir_missing]="Directory no longer exists"
+L_EN[dir_recreate]="Recreate directory and continue"
+L_EN[dir_delete_session]="Delete this session"
+L_EN[session_not_found]="Session no longer exists at Claude Code."
+L_EN[session_restart_new]="Start new session (same directory and subject)"
+L_EN[dir_cancel_back]="Back to main menu"
+L_EN[expired_warning]="session(s) no longer valid at Claude Code"
+L_EN[expired_purge]="Remove invalid sessions now?"
+L_EN[expired_purged]="Invalid sessions removed."
+L_EN[missing_dir_warning]="session(s) with deleted working directory"
+L_EN[legend_expired]="[!] = session expired at Claude Code"
+L_EN[legend_missing_dir]="[?] = working directory deleted"
 L_EN[confirm_yes]="y"
 
 L_DE[title]="Claude Code Session Manager"
@@ -136,7 +166,6 @@ L_DE[new_dir_created]="Verzeichnis angelegt."
 L_DE[msg_switching]="Wechsle nach"
 L_DE[msg_resuming]="Setze Session fort"
 L_DE[err_no_claude]="Fehler: Claude Code ist nicht installiert oder nicht im PATH."
-L_DE[err_no_dir]="Verzeichnis existiert nicht mehr"
 L_DE[sessions_none]="Keine gespeicherten Sessions."
 L_DE[save_title]="Session speichern"
 L_DE[save_want]="Session speichern?"
@@ -175,6 +204,33 @@ L_DE[stats_overview]="Übersicht"
 L_DE[stats_top_dirs]="Top Verzeichnisse"
 L_DE[stats_top_tags]="Top Tags"
 L_DE[stats_all_sessions]="Alle Sessions"
+L_DE[menu_settings]="Einstellungen"
+L_DE[settings_title]="Einstellungen"
+L_DE[settings_lang]="Sprache"
+L_DE[settings_lang_current]="Aktuell"
+L_DE[settings_lang_prompt]="Sprache wählen (en/de):"
+L_DE[settings_cleanup]="Aufräumen nach Tagen"
+L_DE[settings_cleanup_current]="Aktuell"
+L_DE[settings_cleanup_prompt]="Tage bis Session als alt gilt (0=deaktiviert):"
+L_DE[settings_log_days]="Log-Aufbewahrung (Tage)"
+L_DE[settings_log_days_prompt]="Tage für Log-Aufbewahrung (0=deaktiviert):"
+L_DE[settings_saved]="Einstellungen gespeichert."
+L_DE[settings_invalid]="Ungültige Eingabe, aktueller Wert bleibt."
+L_DE[menu_log]="Aktivitätslog"
+L_DE[log_title]="Aktivitätslog"
+L_DE[log_empty]="Keine Log-Einträge."
+L_DE[dir_missing]="Verzeichnis existiert nicht mehr"
+L_DE[dir_recreate]="Verzeichnis neu anlegen und fortfahren"
+L_DE[dir_delete_session]="Diese Session löschen"
+L_DE[session_not_found]="Session existiert bei Claude Code nicht mehr."
+L_DE[session_restart_new]="Neue Session starten (gleiches Verzeichnis und Betreff)"
+L_DE[dir_cancel_back]="Zurück zum Hauptmenü"
+L_DE[expired_warning]="Session(s) bei Claude Code nicht mehr gültig"
+L_DE[expired_purge]="Ungültige Sessions jetzt entfernen?"
+L_DE[expired_purged]="Ungültige Sessions entfernt."
+L_DE[missing_dir_warning]="Session(s) mit gelöschtem Arbeitsverzeichnis"
+L_DE[legend_expired]="[!] = Session bei Claude Code abgelaufen"
+L_DE[legend_missing_dir]="[?] = Arbeitsverzeichnis gelöscht"
 L_DE[confirm_yes]="j"
 
 t() {
@@ -213,12 +269,53 @@ fi
 
 export CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=5000
 
+# Check if any sessions have status markers; append legend lines to given array name
+_add_legend() {
+    local -n _lines="$1"
+    [[ "${CCSM_TESTING:-}" == "true" ]] && return
+    [ ! -s "$SESSION_LOG" ] && return
+    local has_expired=false has_missing=false
+    while IFS=$'\t' read -r sid cwd _ _ _ _; do
+        if ! is_session_valid "$sid"; then
+            has_expired=true
+        elif [ ! -d "$cwd" ]; then
+            has_missing=true
+        fi
+        $has_expired && $has_missing && break
+    done < "$SESSION_LOG"
+    if $has_expired || $has_missing; then
+        _lines+=("")
+        $has_expired && _lines+=("  \033[38;5;196m$(t legend_expired)${A_RST}")
+        $has_missing && _lines+=("  ${A_AMBER}$(t legend_missing_dir)${A_RST}")
+    fi
+}
+
 [ -f "$SESSION_LOG" ] || touch "$SESSION_LOG"
 mkdir -p "$CCSM_TMPDIR"
 
 # Lookup a session by ID (exact match on first field, no regex)
 lookup_sid() {
     awk -F'\t' -v sid="$1" '$1 == sid' "$SESSION_LOG"
+}
+
+# Check if a session still exists at Claude Code (JSONL transcript present)
+# Results are cached in _VALID_CACHE to avoid repeated find calls
+declare -A _VALID_CACHE
+is_session_valid() {
+    [[ "${CCSM_TESTING:-}" == "true" ]] && return 0
+    local sid="$1"
+    # Return cached result if available
+    if [ -n "${_VALID_CACHE[$sid]+set}" ]; then
+        return "${_VALID_CACHE[$sid]}"
+    fi
+    # Search for session JSONL across all project folders
+    if [ -n "$(find "$HOME/.claude/projects" -name "${sid}.jsonl" -print -quit 2>/dev/null)" ]; then
+        _VALID_CACHE[$sid]=0
+        return 0
+    else
+        _VALID_CACHE[$sid]=1
+        return 1
+    fi
 }
 
 ###############################################################################
@@ -231,6 +328,29 @@ if command -v tac &>/dev/null; then
 else
     _tac() { tail -r "$@"; }
 fi
+
+# Activity log
+ccsm_log() {
+    local action="$1" msg="$2"
+    [ "$LOG_DAYS" -eq 0 ] 2>/dev/null && return
+    echo "$(date '+%Y-%m-%d %H:%M') [$action] $msg" >> "$CCSM_LOG"
+}
+
+# Log rotation: remove entries older than LOG_DAYS
+_rotate_log() {
+    [ "$LOG_DAYS" -eq 0 ] 2>/dev/null && return
+    [ ! -f "$CCSM_LOG" ] && return
+    local cutoff_date
+    case "$CCSM_OS" in
+        Linux)   cutoff_date=$(date -d "$LOG_DAYS days ago" '+%Y-%m-%d') ;;
+        Darwin|FreeBSD) cutoff_date=$(date -v-"${LOG_DAYS}"d '+%Y-%m-%d') ;;
+        *)       cutoff_date=$(python3 -c "import datetime; print((datetime.datetime.now()-datetime.timedelta(days=$LOG_DAYS)).strftime('%Y-%m-%d'))" 2>/dev/null) || return ;;
+    esac
+    [ -z "$cutoff_date" ] && return
+    local tmplog="${CCSM_LOG}.tmp"
+    awk -v cutoff="$cutoff_date" '$1 >= cutoff' "$CCSM_LOG" > "$tmplog" 2>/dev/null
+    mv "$tmplog" "$CCSM_LOG"
+}
 
 # File lock for safe TSV writes (prevents data loss with parallel sessions)
 LOCKFILE="${SESSION_LOG}.lock"
@@ -294,21 +414,13 @@ ask_input() {
         echo -e "  ${label}"
     fi
     echo -n "  > "; read -r ANSWER
+    # Strip any control characters that stty sane may leave
+    ANSWER=$(echo "$ANSWER" | tr -d '\r')
     [ -z "$ANSWER" ] && ANSWER="$default"
 }
 
-# ask_path "Label" "default" → sets ANSWER (with Tab completion for paths)
-ask_path() {
-    local label="$1"
-    local default="$2"
-    if [ -n "$default" ]; then
-        echo -e "  ${label} ${A_DIM}(Enter=${default})${A_RST}"
-    else
-        echo -e "  ${label}"
-    fi
-    echo -n "  > "; read -r ANSWER
-    [ -z "$ANSWER" ] && ANSWER="$default"
-}
+# ask_path is an alias for ask_input (Tab completion was removed due to terminal issues)
+ask_path() { ask_input "$@"; }
 
 ###############################################################################
 # Permanent token counter (survives session deletion)
@@ -359,20 +471,22 @@ format_tokens() {
 ###############################################################################
 days_since() {
     local date_str="$1"
+    # Extract date part only (strip time if present: "2026-03-21 14:30" → "2026-03-21")
+    local date_only="${date_str%% *}"
     local now today_sec date_sec
     now=$(date '+%Y-%m-%d')
     case "$CCSM_OS" in
         Linux)
             today_sec=$(date -d "$now" '+%s' 2>/dev/null) || today_sec=$(date '+%s')
-            date_sec=$(date -d "$date_str" '+%s' 2>/dev/null) || return 1
+            date_sec=$(date -d "$date_only" '+%s' 2>/dev/null) || return 1
             ;;
         Darwin|FreeBSD)
             today_sec=$(date -jf '%Y-%m-%d' "$now" '+%s' 2>/dev/null) || today_sec=$(date '+%s')
-            date_sec=$(date -jf '%Y-%m-%d' "$date_str" '+%s' 2>/dev/null) || return 1
+            date_sec=$(date -jf '%Y-%m-%d' "$date_only" '+%s' 2>/dev/null) || return 1
             ;;
         *)
             today_sec=$(python3 -c "import datetime; print(int(datetime.datetime.strptime('$now','%Y-%m-%d').timestamp()))" 2>/dev/null) || today_sec=$(date '+%s')
-            date_sec=$(python3 -c "import datetime; print(int(datetime.datetime.strptime('$date_str','%Y-%m-%d').timestamp()))" 2>/dev/null) || return 1
+            date_sec=$(python3 -c "import datetime; print(int(datetime.datetime.strptime('$date_only','%Y-%m-%d').timestamp()))" 2>/dev/null) || return 1
             ;;
     esac
     echo $(( (today_sec - date_sec) / 86400 ))
@@ -392,7 +506,7 @@ calc_columns() {
     local avail=$((cols - 12))
     # Fixed columns
     _W_NUM=3
-    _W_DATE=12
+    _W_DATE=18
     # Token columns: minimum 9, scale up with terminal
     _W_TI=$(( avail * 8 / 100 )); [ "$_W_TI" -lt 9 ] && _W_TI=9
     _W_TO=$_W_TI; _W_LI=$_W_TI; _W_LO=$_W_TI
@@ -468,9 +582,25 @@ build_table() {
         idx=$((idx + 1))
         TABLE_SIDS+=("$sid")
 
+        # Legacy: add default time if missing (old entries have date only)
+        [ ${#datum} -le 10 ] && datum="${datum} 00:01"
+
+        # Mark invalid sessions: [!] red = expired at Claude Code, [?] amber = dir missing
+        local status_prefix="" row_color=""
+        if [[ "${CCSM_TESTING:-}" != "true" ]]; then
+            if ! is_session_valid "$sid"; then
+                status_prefix="[!] "
+                row_color='\033[38;5;196m'
+            elif [ ! -d "$cwd" ]; then
+                status_prefix="[?] "
+                row_color="$A_AMBER"
+            fi
+        fi
+
         local short_cwd="${cwd/#$HOME/\~}"
-        local short_betreff="${betreff:0:$((_W_SUBJ - 2))}"
-        [ ${#betreff} -gt $((_W_SUBJ - 2)) ] && short_betreff="${short_betreff}.."
+        local short_betreff="${status_prefix}${betreff}"
+        short_betreff="${short_betreff:0:$((_W_SUBJ - 2))}"
+        [ ${#short_betreff} -ge $((_W_SUBJ - 2)) ] && short_betreff="${short_betreff:0:$((_W_SUBJ - 4))}.."
         local short_cwd_d="${short_cwd:0:$((_W_DIR - 2))}"
         [ ${#short_cwd} -gt $((_W_DIR - 2)) ] && short_cwd_d="..${short_cwd: -$((_W_DIR - 4))}"
 
@@ -485,9 +615,12 @@ build_table() {
             last_out=$(echo "$last_part" | cut -d/ -f2)
         fi
 
-        TABLE_LINES+=("$(table_data_row "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+        local row
+        row="$(table_data_row "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
             "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
-            "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")")
+            "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")"
+        [ -n "$row_color" ] && row="${row_color}${row}${A_RST}"
+        TABLE_LINES+=("$row")
 
         [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
     done < <(_tac "$SESSION_LOG")
@@ -507,7 +640,7 @@ build_table_compact() {
     fi
 
     # Compact column widths: wider subject/dir since no Last columns
-    local cw_num=3 cw_date=12
+    local cw_num=3 cw_date=18
     local cols
     cols=$(tput cols 2>/dev/null || echo 100)
     local avail=$((cols - 16))
@@ -534,8 +667,24 @@ build_table_compact() {
         idx=$((idx + 1))
         TABLE_SIDS+=("$sid")
 
-        local short_betreff="${betreff:0:$((cw_subj - 2))}"
-        [ ${#betreff} -gt $((cw_subj - 2)) ] && short_betreff="${short_betreff}.."
+        # Legacy: add default time if missing
+        [ ${#datum} -le 10 ] && datum="${datum} 00:01"
+
+        # Mark invalid sessions: ✗ red = expired at Claude Code, ⚠ amber = dir missing
+        local status_prefix="" row_color=""
+        if [[ "${CCSM_TESTING:-}" != "true" ]]; then
+            if ! is_session_valid "$sid"; then
+                status_prefix="[!] "
+                row_color='\033[38;5;196m'
+            elif [ ! -d "$cwd" ]; then
+                status_prefix="[?] "
+                row_color="$A_AMBER"
+            fi
+        fi
+
+        local short_betreff="${status_prefix}${betreff}"
+        short_betreff="${short_betreff:0:$((cw_subj - 2))}"
+        [ ${#short_betreff} -ge $((cw_subj - 2)) ] && short_betreff="${short_betreff:0:$((cw_subj - 4))}.."
         local short_cwd="${cwd/#$HOME/\~}"
         local short_cwd_d="${short_cwd:0:$((cw_dir - 2))}"
         [ ${#short_cwd} -gt $((cw_dir - 2)) ] && short_cwd_d="..${short_cwd: -$((cw_dir - 4))}"
@@ -547,9 +696,12 @@ build_table_compact() {
             tot_out=$(echo "$total_part" | cut -d/ -f2)
         fi
 
-        lines+=("$(printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│' \
+        local row
+        row="$(printf '│%-*s│%-*s│%-*s│%-*s│%*s│%*s│' \
             $cw_num " $idx" $cw_date " $datum" $cw_subj " $short_betreff" $cw_dir " $short_cwd_d" \
-            $cw_ti "$(format_tokens "$tot_in") " $cw_to "$(format_tokens "$tot_out") ")")
+            $cw_ti "$(format_tokens "$tot_in") " $cw_to "$(format_tokens "$tot_out") ")"
+        [ -n "$row_color" ] && row="${row_color}${row}${A_RST}"
+        lines+=("$row")
 
         [ "$max_items" -gt 0 ] && [ "$idx" -ge "$max_items" ] && break
     done < <(_tac "$SESSION_LOG")
@@ -664,6 +816,7 @@ check_cleanup() {
             done
             if $sid_match; then
                 del_count=$((del_count + 1))
+                ccsm_log "DELETE" "sid=$s subject=$b dir=$c"
             else
                 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
             fi
@@ -712,6 +865,7 @@ show_main_menu() {
         for line in "${COMPACT_TABLE_LINES[@]}"; do
             box_lines+=("  $line")
         done
+        _add_legend box_lines
         box_lines+=("")
     fi
 
@@ -722,6 +876,8 @@ show_main_menu() {
     box_lines+=("  ${A_GREEN}[s]${A_RST} $(t menu_resume)")
     box_lines+=("  ${A_GREEN}[d]${A_RST} $(t menu_delete)")
     box_lines+=("  ${A_GREEN}[i]${A_RST} $(t menu_stats)")
+    box_lines+=("  ${A_GREEN}[l]${A_RST} $(t menu_log)")
+    box_lines+=("  ${A_GREEN}[c]${A_RST} $(t menu_settings)")
     box_lines+=("  ${A_GREEN}[q]${A_RST} $(t menu_quit)")
 
     render_box "" "${box_lines[@]}"
@@ -765,6 +921,7 @@ quick_resume() {
     for line in "${TABLE_LINES[@]}"; do
         box_lines+=("  $line")
     done
+    _add_legend box_lines
     box_lines+=("")
     box_lines+=("$dline")
     box_lines+=("  ${A_TEAL}${A_BOLD}$(t menu_action)${A_RST}")
@@ -821,8 +978,24 @@ _search_and_resume() {
             idx=$((idx + 1))
             SEARCH_SIDS+=("$sid")
 
-            local short_betreff="${betreff:0:$((_W_SUBJ - 2))}"
-            [ ${#betreff} -gt $((_W_SUBJ - 2)) ] && short_betreff="${short_betreff}.."
+            # Legacy: add default time if missing
+            [ ${#datum} -le 10 ] && datum="${datum} 00:01"
+
+            # Mark invalid sessions: ✗ red = expired at Claude Code, ⚠ amber = dir missing
+            local status_prefix="" row_color=""
+            if [[ "${CCSM_TESTING:-}" != "true" ]]; then
+                if ! is_session_valid "$sid"; then
+                    status_prefix="[!] "
+                    row_color='\033[38;5;196m'
+                elif [ ! -d "$cwd" ]; then
+                    status_prefix="[?] "
+                    row_color="$A_AMBER"
+                fi
+            fi
+
+            local short_betreff="${status_prefix}${betreff}"
+            short_betreff="${short_betreff:0:$((_W_SUBJ - 2))}"
+            [ ${#short_betreff} -ge $((_W_SUBJ - 2)) ] && short_betreff="${short_betreff:0:$((_W_SUBJ - 4))}.."
             local short_cwd="${cwd/#$HOME/\~}"
             local short_cwd_d="${short_cwd:0:$((_W_DIR - 2))}"
             [ ${#short_cwd} -gt $((_W_DIR - 2)) ] && short_cwd_d="..${short_cwd: -$((_W_DIR - 4))}"
@@ -838,9 +1011,12 @@ _search_and_resume() {
                 last_out=$(echo "$last_part" | cut -d/ -f2)
             fi
 
-            search_table_lines+=("$(table_data_row "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
+            local row
+            row="$(table_data_row "$idx" "$datum" "$short_betreff" "$short_cwd_d" \
                 "$(format_tokens "$tot_in")" "$(format_tokens "$tot_out")" \
-                "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")")
+                "$(format_tokens "$last_in")" "$(format_tokens "$last_out")")"
+            [ -n "$row_color" ] && row="${row_color}${row}${A_RST}"
+            search_table_lines+=("$row")
         fi
     done < <(_tac "$SESSION_LOG")
 
@@ -866,6 +1042,7 @@ _search_and_resume() {
     for line in "${search_table_lines[@]}"; do
         box_lines+=("  $line")
     done
+    _add_legend box_lines
     box_lines+=("")
     box_lines+=("$dline")
     box_lines+=("  ${A_GREEN}[1-${#SEARCH_SIDS[@]}]${A_RST} $(t msg_resuming)")
@@ -906,13 +1083,88 @@ resume_session() {
     echo -e "  ${A_GREEN}${A_BOLD}$(t msg_resuming): $betreff${A_RST}"
     echo ""
 
-    cd "$cwd" || {
-        echo -e "  ${A_AMBER}$(t err_no_dir): $cwd${A_RST}"
-        sleep 2
-        return 1
-    }
-    claude --resume "$sid" "$@"
-    save_session
+    if ! cd "$cwd" 2>/dev/null; then
+        echo -e "  ${A_AMBER}$(t dir_missing): $cwd${A_RST}"
+        echo ""
+        echo -e "  ${A_GREEN}[1]${A_RST} $(t dir_recreate)"
+        echo -e "  ${A_GREEN}[2]${A_RST} $(t dir_delete_session)"
+        echo -e "  ${A_GREEN}[q]${A_RST} $(t dir_cancel_back)"
+        echo ""
+        echo -n "  > "; read -r dir_choice
+        case "$dir_choice" in
+            1)
+                mkdir -p "$cwd"
+                cd "$cwd" || return 1
+                echo -e "  ${A_GREEN}✓ $(t new_dir_created)${A_RST}"
+                ccsm_log "RESUME" "$betreff ($cwd) [dir recreated]"
+                ;;
+            2)
+                # Delete session from log
+                _do_resume_delete() {
+                    local tmplog="${SESSION_LOG}.tmp"
+                    awk -F'\t' -v sid="$sid" '$1 != sid' "$SESSION_LOG" > "$tmplog"
+                    mv "$tmplog" "$SESSION_LOG"
+                }
+                with_lock _do_resume_delete
+                ccsm_log "DELETE" "sid=$sid subject=$betreff dir=$cwd [dir missing]"
+                echo -e "  ${A_GREEN}✓ $(t delete_done)${A_RST}"
+                sleep 1
+                return 1
+                ;;
+            *) return 1 ;;
+        esac
+    else
+        ccsm_log "RESUME" "$betreff ($cwd)"
+    fi
+    # Run claude — capture last lines to detect expired sessions
+    local claude_tmp="${CCSM_TMPDIR}/claude_output_$$"
+    claude --resume "$sid" "$@" 2>&1 | tee "$claude_tmp"
+    local claude_rc=${PIPESTATUS[0]}
+
+    if grep -qF "No conversation found" "$claude_tmp" 2>/dev/null; then
+        rm -f "$claude_tmp"
+        echo ""
+        echo -e "  \033[38;5;196m✗ $(t session_not_found)${A_RST}"
+        echo ""
+        echo -e "  ${A_GREEN}[1]${A_RST} $(t session_restart_new)"
+        echo -e "  ${A_GREEN}[2]${A_RST} $(t dir_delete_session)"
+        echo -e "  ${A_GREEN}[q]${A_RST} $(t dir_cancel_back)"
+        echo ""
+        echo -n "  > "; read -r expired_choice
+        # Helper: delete expired session from log
+        local _expired_reason=""
+        _do_delete_expired_sid() {
+            local tmplog="${SESSION_LOG}.tmp"
+            while IFS=$'\t' read -r s c b d t_col tk; do
+                if [ "$s" = "$sid" ]; then
+                    ccsm_log "DELETE" "sid=$s subject=$b dir=$c [$_expired_reason]"
+                else
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+                fi
+            done < "$SESSION_LOG" > "$tmplog"
+            mv "$tmplog" "$SESSION_LOG"
+        }
+
+        case "$expired_choice" in
+            1)
+                _expired_reason="session not found, restarting"
+                with_lock _do_delete_expired_sid
+                PRESET_SUBJECT="$betreff"
+                ccsm_log "NEW" "$betreff ($cwd) [restart after expired]"
+                claude "$@"
+                save_session
+                ;;
+            2)
+                _expired_reason="session not found"
+                with_lock _do_delete_expired_sid
+                echo -e "  ${A_GREEN}✓ $(t delete_done)${A_RST}"
+                sleep 1
+                ;;
+        esac
+    else
+        rm -f "$claude_tmp"
+        save_session
+    fi
     cd "$CCSM_START_DIR" 2>/dev/null || true
 }
 
@@ -950,6 +1202,7 @@ delete_session() {
     for line in "${TABLE_LINES[@]}"; do
         box_lines+=("  $line")
     done
+    _add_legend box_lines
     box_lines+=("")
     box_lines+=("$dline")
     box_lines+=("  ${A_TEAL}${A_BOLD}$(t menu_action)${A_RST}")
@@ -994,6 +1247,7 @@ delete_session() {
             done
             if $sid_match; then
                 del_count=$((del_count + 1))
+                ccsm_log "DELETE" "sid=$s subject=$b dir=$c"
             else
                 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
             fi
@@ -1276,6 +1530,13 @@ save_session() {
     tokens=$(jq -r '.tokens // "0/0"' "$tmpfile" 2>/dev/null)
     [ -z "$sid" ] && return
 
+    # If saved cwd no longer exists, use current directory
+    if [ -n "$cwd" ] && [ ! -d "$cwd" ]; then
+        local old_cwd="$cwd"
+        cwd="$PWD"
+        ccsm_log "SAVE" "dir missing ($old_cwd), using $cwd"
+    fi
+
     # Add to lifetime token counter
     if [ -n "$tokens" ] && [ "$tokens" != "0/0" ]; then
         local lt_in lt_out
@@ -1285,7 +1546,7 @@ save_session() {
     fi
 
     local datum
-    datum=$(date '+%Y-%m-%d')
+    datum=$(date '+%Y-%m-%d %H:%M')
     local existing_line
     existing_line=$(lookup_sid "$sid")
 
@@ -1339,16 +1600,18 @@ save_session() {
 
         _do_save_update() {
             local tmplog="${SESSION_LOG}.tmp"
+            # Remove old entry, then append updated one at the end
+            # This moves the session to the top of the "recent" list
             while IFS=$'\t' read -r s c b d t_col tk; do
-                if [ "$s" = "$sid" ]; then
-                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$new_betreff" "$datum" "$t_col" "$new_tokens"
-                else
+                if [ "$s" != "$sid" ]; then
                     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
                 fi
             done < "$SESSION_LOG" > "$tmplog"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$new_betreff" "$datum" "$existing_tags" "$new_tokens" >> "$tmplog"
             mv "$tmplog" "$SESSION_LOG"
         }
         with_lock _do_save_update
+        ccsm_log "SAVE" "updated: ${new_betreff}"
         echo -e "  ${A_GREEN}✓ $(t save_updated): ${new_betreff}${A_RST}"
     else
         # New session — guided flow
@@ -1401,6 +1664,7 @@ save_session() {
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$cwd" "$chosen_betreff" "$datum" "$chosen_tags" "${tokens}|${tokens}" >> "$SESSION_LOG"
         }
         with_lock _do_save_append
+        ccsm_log "SAVE" "new: ${chosen_betreff} ($cwd)"
         echo -e "  ${A_GREEN}✓ $(t save_saved): ${chosen_betreff}${A_RST}"
     fi
 
@@ -1426,7 +1690,7 @@ Nutzung:
 
 Konfiguration: ~/.claude/ccsm.conf
   CLEANUP_DAYS=30       Tage bis Session als alt gilt
-  MAX_SESSIONS=0        Max. Sessions (0=unbegrenzt)
+  LOG_DAYS=90           Log-Aufbewahrung in Tagen
   CCSM_LANG=de          Sprache (en, de)
 EOF
     else
@@ -1443,7 +1707,7 @@ Usage:
 
 Configuration: ~/.claude/ccsm.conf
   CLEANUP_DAYS=30       Days until session is considered old
-  MAX_SESSIONS=0        Max sessions (0=unlimited)
+  LOG_DAYS=90           Log retention in days
   CCSM_LANG=en          Language (en, de)
 EOF
     fi
@@ -1513,9 +1777,224 @@ start_new_session() {
     [ -n "$PRESET_SUBJECT" ] && echo -e "  Subject: ${A_VIOLET}$PRESET_SUBJECT${A_RST}"
     echo ""
 
+    ccsm_log "NEW" "${PRESET_SUBJECT:-new session} ($target_dir)"
     claude "$@"
     save_session
     cd "$CCSM_START_DIR" 2>/dev/null || true
+}
+
+###############################################################################
+# Settings
+###############################################################################
+show_settings() {
+    while true; do
+        clear
+
+        # Doppelte Trennlinie
+        local cols
+        cols=$(tput cols 2>/dev/null || echo 80)
+        local binner=$((cols < 60 ? 56 : cols - 8))
+        local dline=""
+        for ((i=0; i<binner; i++)); do dline+="═"; done
+
+        local box_lines=()
+        box_lines+=("  ${A_VIOLET}╔═╗ ╔═╗ ╔═╗ ╔╦╗${A_RST}   ${A_BOLD}$(t settings_title)${A_RST}")
+        box_lines+=("  ${A_VIOLET}║   ║   ╚═╗ ║║║${A_RST}")
+        box_lines+=("  ${A_VIOLET}╚═╝ ╚═╝ ╚═╝ ╩ ╩${A_RST}")
+        box_lines+=("")
+        box_lines+=("$dline")
+        box_lines+=("")
+        box_lines+=("  ${A_GREEN}[1]${A_RST} $(t settings_lang)            ${A_DIM}$(t settings_lang_current): ${CCSM_LANG}${A_RST}")
+        box_lines+=("  ${A_GREEN}[2]${A_RST} $(t settings_cleanup)      ${A_DIM}$(t settings_cleanup_current): ${CLEANUP_DAYS}${A_RST}")
+        box_lines+=("  ${A_GREEN}[3]${A_RST} $(t settings_log_days)  ${A_DIM}$(t settings_cleanup_current): ${LOG_DAYS}${A_RST}")
+        box_lines+=("")
+        box_lines+=("$dline")
+        box_lines+=("  ${A_GREEN}[q]${A_RST} $(t menu_quit)")
+
+        render_box "" "${box_lines[@]}"
+        echo ""
+        echo -n "  > "; read -r settings_choice
+
+        case "$settings_choice" in
+            1)
+                echo ""
+                ask_input "$(t settings_lang_prompt)" "$CCSM_LANG"
+                local new_lang="$ANSWER"
+                if [[ "$new_lang" == "en" ]] || [[ "$new_lang" == "de" ]]; then
+                    ccsm_log "SETTINGS" "CCSM_LANG: $CCSM_LANG → $new_lang"
+                    CCSM_LANG="$new_lang"
+                    _save_config
+                    echo -e "  ${A_GREEN}✓ $(t settings_saved)${A_RST}"
+                else
+                    echo -e "  ${A_AMBER}$(t settings_invalid)${A_RST}"
+                fi
+                sleep 1
+                ;;
+            2)
+                echo ""
+                ask_input "$(t settings_cleanup_prompt)" "$CLEANUP_DAYS"
+                local new_days="$ANSWER"
+                if [[ "$new_days" =~ ^[0-9]+$ ]]; then
+                    ccsm_log "SETTINGS" "CLEANUP_DAYS: $CLEANUP_DAYS → $new_days"
+                    CLEANUP_DAYS="$new_days"
+                    _save_config
+                    echo -e "  ${A_GREEN}✓ $(t settings_saved)${A_RST}"
+                else
+                    echo -e "  ${A_AMBER}$(t settings_invalid)${A_RST}"
+                fi
+                sleep 1
+                ;;
+            3)
+                echo ""
+                ask_input "$(t settings_log_days_prompt)" "$LOG_DAYS"
+                local new_log_days="$ANSWER"
+                if [[ "$new_log_days" =~ ^[0-9]+$ ]]; then
+                    ccsm_log "SETTINGS" "LOG_DAYS: $LOG_DAYS → $new_log_days"
+                    LOG_DAYS="$new_log_days"
+                    _save_config
+                    echo -e "  ${A_GREEN}✓ $(t settings_saved)${A_RST}"
+                else
+                    echo -e "  ${A_AMBER}$(t settings_invalid)${A_RST}"
+                fi
+                sleep 1
+                ;;
+            q|Q|"") return ;;
+        esac
+    done
+}
+
+# Write current settings to config file
+_save_config() {
+    cat > "$CONFIG_FILE" <<EOF
+# ccsm configuration
+CLEANUP_DAYS=$CLEANUP_DAYS
+LOG_DAYS=$LOG_DAYS
+CCSM_LANG=$CCSM_LANG
+EOF
+}
+
+###############################################################################
+# Check for expired sessions (no longer valid at Claude Code)
+###############################################################################
+check_expired_sessions() {
+    [ ! -s "$SESSION_LOG" ] && return
+
+    # Load previously dismissed session IDs
+    local -A dismissed=()
+    if [ -f "$CCSM_DISMISSED" ]; then
+        while IFS= read -r d_sid; do
+            [ -n "$d_sid" ] && dismissed["$d_sid"]=1
+        done < "$CCSM_DISMISSED"
+    fi
+
+    # Find new invalid sessions (not previously dismissed)
+    local new_invalid=() new_details=()
+    local expired_count=0 missing_dir_count=0
+    while IFS=$'\t' read -r sid cwd betreff datum tags tokens_col; do
+        [ -n "${dismissed[$sid]:-}" ] && continue
+        if ! is_session_valid "$sid"; then
+            new_invalid+=("$sid")
+            new_details+=("\033[38;5;196m  [!] ${betreff}  ${A_DIM}(${cwd})${A_RST}")
+            expired_count=$((expired_count + 1))
+        elif [ ! -d "$cwd" ]; then
+            new_invalid+=("$sid")
+            new_details+=("${A_AMBER}  [?] ${betreff}  ${A_DIM}(${cwd})${A_RST}")
+            missing_dir_count=$((missing_dir_count + 1))
+        fi
+    done < "$SESSION_LOG"
+
+    [ ${#new_invalid[@]} -eq 0 ] && return
+
+    echo ""
+    [ "$expired_count" -gt 0 ] && echo -e "  \033[38;5;196m[!] ${expired_count} $(t expired_warning)${A_RST}"
+    [ "$missing_dir_count" -gt 0 ] && echo -e "  ${A_AMBER}[?] ${missing_dir_count} $(t missing_dir_warning)${A_RST}"
+    echo ""
+    for detail in "${new_details[@]}"; do
+        echo -e "$detail"
+    done
+    echo ""
+    ask_yn "$(t expired_purge)"
+    if is_yes "$ANSWER"; then
+        _do_purge_invalid() {
+            local tmplog="${SESSION_LOG}.tmp"
+            while IFS=$'\t' read -r s c b d t_col tk; do
+                local is_invalid=false
+                for inv_sid in "${new_invalid[@]}"; do
+                    [ "$s" = "$inv_sid" ] && is_invalid=true && break
+                done
+                if $is_invalid; then
+                    ccsm_log "DELETE" "sid=$s subject=$b dir=$c [auto-purge]"
+                else
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$c" "$b" "$d" "$t_col" "$tk"
+                fi
+            done < "$SESSION_LOG" > "$tmplog"
+            mv "$tmplog" "$SESSION_LOG"
+        }
+        with_lock _do_purge_invalid
+        # Remove purged sessions from dismissed file
+        if [ -f "$CCSM_DISMISSED" ]; then
+            local tmp_dismissed="${CCSM_DISMISSED}.tmp"
+            local dismiss_pattern=""
+            for inv_sid in "${new_invalid[@]}"; do
+                dismiss_pattern+="${inv_sid}|"
+            done
+            dismiss_pattern="${dismiss_pattern%|}"
+            grep -vE "^(${dismiss_pattern})$" "$CCSM_DISMISSED" > "$tmp_dismissed" 2>/dev/null || true
+            mv "$tmp_dismissed" "$CCSM_DISMISSED"
+        fi
+        echo -e "  ${A_GREEN}✓ $(t expired_purged)${A_RST}"
+        sleep 1
+    else
+        # Remember dismissed sessions so we don't ask again
+        for inv_sid in "${new_invalid[@]}"; do
+            echo "$inv_sid" >> "$CCSM_DISMISSED"
+        done
+    fi
+}
+
+###############################################################################
+# Activity Log Viewer
+###############################################################################
+show_log() {
+    clear
+
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 80)
+    local binner=$((cols < 60 ? 56 : cols - 8))
+    local dline=""
+    for ((i=0; i<binner; i++)); do dline+="═"; done
+
+    local box_lines=()
+    box_lines+=("  ${A_VIOLET}╔═╗ ╔═╗ ╔═╗ ╔╦╗${A_RST}   ${A_BOLD}$(t log_title)${A_RST}")
+    box_lines+=("  ${A_VIOLET}║   ║   ╚═╗ ║║║${A_RST}")
+    box_lines+=("  ${A_VIOLET}╚═╝ ╚═╝ ╚═╝ ╩ ╩${A_RST}")
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("")
+
+    if [ -f "$CCSM_LOG" ] && [ -s "$CCSM_LOG" ]; then
+        while IFS= read -r logline; do
+            local colored
+            colored=$(echo "$logline" | sed \
+                -e $'s/\\[NEW\\]/\033[38;5;35m[NEW]\033[0m/' \
+                -e $'s/\\[RESUME\\]/\033[38;5;36m[RESUME]\033[0m/' \
+                -e $'s/\\[SAVE\\]/\033[38;5;99m[SAVE]\033[0m/' \
+                -e $'s/\\[DELETE\\]/\033[38;5;214m[DELETE]\033[0m/' \
+                -e $'s/\\[CLEANUP\\]/\033[38;5;214m[CLEANUP]\033[0m/' \
+                -e $'s/\\[SETTINGS\\]/\033[2m[SETTINGS]\033[0m/')
+            box_lines+=("  ${colored}")
+        done < <(_tac "$CCSM_LOG")
+    else
+        box_lines+=("  ${A_DIM}$(t log_empty)${A_RST}")
+    fi
+
+    box_lines+=("")
+    box_lines+=("$dline")
+    box_lines+=("  ${A_GREEN}[q]${A_RST} $(t menu_quit)")
+
+    render_box "" "${box_lines[@]}"
+    echo ""
+    echo -n "  > "; read -r
 }
 
 ###############################################################################
@@ -1533,6 +2012,8 @@ main() {
     esac
 
     check_cleanup
+    check_expired_sessions
+    _rotate_log
 
     while true; do
         show_main_menu
@@ -1565,6 +2046,12 @@ main() {
                 ;;
             i|I)
                 show_stats
+                ;;
+            l|L)
+                show_log
+                ;;
+            c|C)
+                show_settings
                 ;;
             q|Q|"")
                 clear

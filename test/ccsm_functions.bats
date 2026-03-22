@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# Tests für reine Funktionen: days_since, calc_columns, format_tokens, _tac, with_lock, generate_suggestions
+# Tests für reine Funktionen: days_since, calc_columns, format_tokens, _tac, with_lock,
+# ccsm_log, _rotate_log, _save_config, lookup_sid, is_yes, generate_suggestions
 
 setup() {
     load 'common_setup'
@@ -53,7 +54,7 @@ setup() {
 @test "calc_columns: setzt Spaltenbreiten" {
     calc_columns
     [ "$_W_NUM" -eq 3 ]
-    [ "$_W_DATE" -eq 12 ]
+    [ "$_W_DATE" -eq 18 ]
     [ "$_W_SUBJ" -ge 18 ]
     [ "$_W_DIR" -ge 14 ]
 }
@@ -164,6 +165,126 @@ setup() {
 @test "is_yes: lehnt 'n' ab" {
     run bash -c 'export CCSM_TESTING=true CCSM_LANG=en HOME="'"$HOME"'" SESSION_LOG="'"$SESSION_LOG"'" CONFIG_FILE="'"$CONFIG_FILE"'" CCSM_TMPDIR="'"$CCSM_TMPDIR"'"; source "'"$CCSM_ROOT"'/ccsm"; is_yes "n"'
     assert_failure
+}
+
+# --- ccsm_log (activity log) ---
+
+@test "ccsm_log: schreibt Log-Eintrag" {
+    export CCSM_LOG="$BATS_TEST_TMPDIR/test.log"
+    export LOG_DAYS=90
+    ccsm_log "TEST" "test message"
+    [ -f "$CCSM_LOG" ]
+    run grep "TEST" "$CCSM_LOG"
+    assert_success
+    assert_output --partial "test message"
+}
+
+@test "ccsm_log: enthält Datum und Aktion" {
+    export CCSM_LOG="$BATS_TEST_TMPDIR/test2.log"
+    export LOG_DAYS=90
+    ccsm_log "NEW" "my session"
+    local content
+    content=$(cat "$CCSM_LOG")
+    [[ "$content" == *"[NEW]"* ]]
+    [[ "$content" == *"my session"* ]]
+    # Prüfe Datumsformat YYYY-MM-DD HH:MM
+    [[ "$content" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2} ]]
+}
+
+@test "ccsm_log: schreibt nichts wenn LOG_DAYS=0" {
+    export CCSM_LOG="$BATS_TEST_TMPDIR/test3.log"
+    export LOG_DAYS=0
+    ccsm_log "TEST" "should not appear"
+    [ ! -f "$CCSM_LOG" ]
+}
+
+# --- _rotate_log (log rotation) ---
+
+@test "_rotate_log: behält aktuelle Einträge" {
+    export CCSM_LOG="$BATS_TEST_TMPDIR/rotate.log"
+    export LOG_DAYS=90
+    local today
+    today=$(date '+%Y-%m-%d')
+    echo "$today 12:00 [TEST] recent entry" > "$CCSM_LOG"
+    _rotate_log
+    [ -s "$CCSM_LOG" ]
+    run grep "recent entry" "$CCSM_LOG"
+    assert_success
+}
+
+@test "_rotate_log: tut nichts wenn LOG_DAYS=0" {
+    export CCSM_LOG="$BATS_TEST_TMPDIR/rotate2.log"
+    export LOG_DAYS=0
+    echo "2020-01-01 12:00 [TEST] old" > "$CCSM_LOG"
+    _rotate_log
+    # Datei sollte unverändert sein
+    run grep "old" "$CCSM_LOG"
+    assert_success
+}
+
+@test "_rotate_log: tut nichts wenn keine Log-Datei" {
+    export CCSM_LOG="$BATS_TEST_TMPDIR/nonexistent.log"
+    export LOG_DAYS=90
+    run _rotate_log
+    assert_success
+}
+
+# --- _save_config ---
+
+@test "_save_config: schreibt alle Einstellungen" {
+    export CONFIG_FILE="$BATS_TEST_TMPDIR/test_config.conf"
+    CLEANUP_DAYS=45
+    LOG_DAYS=120
+    CCSM_LANG=de
+    _save_config
+    [ -f "$CONFIG_FILE" ]
+    run grep "CLEANUP_DAYS=45" "$CONFIG_FILE"
+    assert_success
+    run grep "LOG_DAYS=120" "$CONFIG_FILE"
+    assert_success
+    run grep "CCSM_LANG=de" "$CONFIG_FILE"
+    assert_success
+}
+
+# --- lookup_sid (awk-based session lookup) ---
+
+@test "lookup_sid: findet Session per ID" {
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "sid-abc" "/tmp" "Test" "2026-03-22" "-" "0/0" > "$SESSION_LOG"
+    local result
+    result=$(lookup_sid "sid-abc")
+    [[ "$result" == *"sid-abc"* ]]
+    [[ "$result" == *"Test"* ]]
+}
+
+@test "lookup_sid: gibt nichts zurück bei unbekannter ID" {
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "sid-abc" "/tmp" "Test" "2026-03-22" "-" "0/0" > "$SESSION_LOG"
+    local result
+    result=$(lookup_sid "sid-unknown")
+    [ -z "$result" ]
+}
+
+@test "lookup_sid: kein Regex-Match auf Teilstrings" {
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "sid-abc-123" "/tmp" "Test" "2026-03-22" "-" "0/0" > "$SESSION_LOG"
+    local result
+    result=$(lookup_sid "sid-abc")
+    [ -z "$result" ]
+}
+
+# --- days_since with time format ---
+
+@test "days_since: funktioniert mit Datum+Uhrzeit Format" {
+    local today
+    today=$(date '+%Y-%m-%d')
+    run days_since "$today 14:30"
+    assert_success
+    assert_output "0"
+}
+
+# --- ask_path (alias for ask_input) ---
+
+@test "ask_path: ist als Funktion definiert" {
+    run type ask_path
+    assert_success
 }
 
 # --- generate_suggestions ---
