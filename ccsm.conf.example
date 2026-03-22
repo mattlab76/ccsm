@@ -8,3 +8,7 @@
 # Days after which a session is considered "old" (0 = disabled)
 # Tage nach denen eine Session als "alt" gilt (0 = deaktiviert)
 CLEANUP_DAYS=30
+
+# Log retention in days (0 = logging disabled)
+# Log-Aufbewahrung in Tagen (0 = Logging deaktiviert)
+LOG_DAYS=90

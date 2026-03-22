@@ -30,6 +30,10 @@ A terminal-based session manager for [Claude Code](https://docs.anthropic.com/en
 - **Search** — Find sessions by subject, directory, or tag (case-insensitive)
 - **Auto-cleanup** — Configurable review of old sessions on startup
 - **Statistics** — Token usage, session count, top directories, top tags
+- **Settings menu** — Language, cleanup days, and log retention configurable from TUI
+- **Activity log** — Color-coded log of all actions (new, resume, save, delete) with configurable retention
+- **Session validation** — Detects sessions expired at Claude Code or with deleted directories
+- **Smart recovery** — Missing directory? Recreate or delete. Session expired? Start new with same subject
 - **Bilingual** — Full English and German UI (auto-detected, configurable)
 - **Cross-platform** — Runs on Linux, macOS, and FreeBSD
 - **Zsh completion** — Tab completion for all CLI flags
@@ -94,6 +98,8 @@ ccsm --help            # Show help
 | `s` | Browse/search all sessions |
 | `d` | Delete sessions (comma-separated, e.g. 1,3,5) |
 | `i` | Show statistics (tokens, top dirs, top tags) |
+| `l` | View activity log |
+| `c` | Settings (language, cleanup days, log retention) |
 | `q` | Quit |
 
 #### New session flow
@@ -106,7 +112,7 @@ When starting a new session (`n`), ccsm guides you through:
 
 ### Configuration
 
-Edit `~/.claude/ccsm.conf`:
+Edit `~/.claude/ccsm.conf` (or use the settings menu `[c]`):
 
 ```bash
 # Language (en, de) — auto-detected from system locale if not set
@@ -114,6 +120,9 @@ CCSM_LANG=en
 
 # Days after which a session is considered "old" (0 = disabled)
 CLEANUP_DAYS=30
+
+# Log retention in days (0 = logging disabled)
+LOG_DAYS=90
 ```
 
 ### How it works
@@ -132,7 +141,7 @@ git submodule update --init --recursive
 bash test/run_tests.sh
 ```
 
-92 tests covering: CLI arguments, search, statistics, cleanup, TSV operations, edge cases, hook, cross-platform wrappers.
+104 tests covering: CLI arguments, search, statistics, cleanup, TSV operations, edge cases, hook, cross-platform wrappers, activity log, settings, session validation.
 
 ### Uninstall
 
@@ -160,6 +169,10 @@ Your session data (`~/.claude/session_log.tsv`) and config (`~/.claude/ccsm.conf
 - **Suche** — Sessions nach Betreff, Verzeichnis oder Tag finden (Groß/Kleinschreibung egal)
 - **Auto-Cleanup** — Konfigurierbares Review alter Sessions beim Start
 - **Statistiken** — Token-Verbrauch, Anzahl Sessions, Top-Verzeichnisse, Top-Tags
+- **Einstellungen** — Sprache, Cleanup-Tage und Log-Aufbewahrung direkt im TUI konfigurierbar
+- **Aktivitätslog** — Farbcodiertes Log aller Aktionen (Neu, Fortsetzen, Speichern, Löschen) mit konfigurierbarer Aufbewahrung
+- **Session-Validierung** — Erkennt abgelaufene Sessions bei Claude Code und gelöschte Verzeichnisse
+- **Smarte Wiederherstellung** — Verzeichnis fehlt? Neu anlegen oder löschen. Session abgelaufen? Neue starten mit gleichem Betreff
 - **Zweisprachig** — Vollständige englische und deutsche Oberfläche (automatisch erkannt, konfigurierbar)
 - **Cross-Platform** — Läuft auf Linux, macOS und FreeBSD
 - **Zsh-Completion** — Tab-Vervollständigung für alle CLI-Flags
@@ -224,6 +237,8 @@ ccsm --help            # Hilfe anzeigen
 | `s` | Alle Sessions anzeigen / durchsuchen |
 | `d` | Sessions löschen (kommagetrennt, z.B. 1,3,5) |
 | `i` | Statistiken anzeigen (Tokens, Top-Verzeichnisse, Top-Tags) |
+| `l` | Aktivitätslog anzeigen |
+| `c` | Einstellungen (Sprache, Cleanup-Tage, Log-Aufbewahrung) |
 | `q` | Beenden |
 
 #### Neue Session starten
@@ -236,7 +251,7 @@ Beim Starten einer neuen Session (`n`) führt ccsm durch:
 
 ### Konfiguration
 
-Bearbeite `~/.claude/ccsm.conf`:
+Bearbeite `~/.claude/ccsm.conf` (oder über das Einstellungsmenü `[c]`):
 
 ```bash
 # Sprache (en, de) — wird automatisch aus System-Locale erkannt wenn nicht gesetzt
@@ -244,6 +259,9 @@ CCSM_LANG=de
 
 # Tage nach denen eine Session als "alt" gilt (0 = deaktiviert)
 CLEANUP_DAYS=30
+
+# Log-Aufbewahrung in Tagen (0 = Logging deaktiviert)
+LOG_DAYS=90
 ```
 
 ### So funktioniert es
@@ -262,7 +280,7 @@ git submodule update --init --recursive
 bash test/run_tests.sh
 ```
 
-92 Tests decken ab: CLI-Argumente, Suche, Statistiken, Cleanup, TSV-Operationen, Edge Cases, Hook, Cross-Platform-Wrapper.
+104 Tests decken ab: CLI-Argumente, Suche, Statistiken, Cleanup, TSV-Operationen, Edge Cases, Hook, Cross-Platform-Wrapper, Aktivitätslog, Einstellungen, Session-Validierung.
 
 ### Deinstallation
 
